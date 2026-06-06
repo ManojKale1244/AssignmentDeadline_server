@@ -33,6 +33,11 @@ app.use(
         legacyHeaders: false,
     })
 )
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "EduTrack API Running Successfully"
+  });
+});
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', name: 'EduTrack API' })
