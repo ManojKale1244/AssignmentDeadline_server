@@ -1,0 +1,447 @@
+const Assignment = require('../models/Assignment')
+const Material = require('../models/Material')
+const Notice = require('../models/Notice')
+const Essay = require('../models/Essay')
+const Subject = require('../models/Subject')
+const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinary')
+const { logActivity } = require('../utils/activityLog')
+
+const checkTeacher = (req, res, next) => {
+    if (req.user.role !== 'teacher') {
+        return res.status(403).json({ message: 'Teacher access required' })
+    }
+    next()
+}
+
+/**
+ * Verifies that the given subjectId belongs to the logged-in teacher.
+ * Returns the subject if valid, throws 403/404 otherwise.
+ */
+const verifySubjectOwnership = async (subjectId, teacherId, res) => {
+    const subject = await Subject.findById(subjectId)
+    if (!subject) {
+        res.status(404).json({ message: 'Subject not found' })
+        return null
+    }
+    if (subject.teacherId.toString() !== teacherId.toString()) {
+        res.status(403).json({ message: 'You are not assigned to this subject' })
+        return null
+    }
+    return subject
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+
+const getTeacherDashboard = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+
+        const [todayDeadlines, upcomingDeadlines, totalAssignments, totalMaterials, totalNotices, mySubjects] =
+            await Promise.all([
+                Assignment.countDocuments({ createdBy: req.user.id, deadline: { $gte: today, $lt: tomorrow } }),
+                Assignment.countDocuments({ createdBy: req.user.id, deadline: { $gte: tomorrow } }),
+                Assignment.countDocuments({ createdBy: req.user.id }),
+                Material.countDocuments({ uploadedBy: req.user.id }),
+                Notice.countDocuments({ createdBy: req.user.id }),
+                Subject.countDocuments({ teacherId: req.user.id }),
+            ])
+
+        res.json({
+            stats: {
+                todayDeadlines,
+                upcomingDeadlines,
+                totalAssignments,
+                totalMaterials,
+                totalNotices,
+                mySubjects,
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
+// ─── ASSIGNMENTS ──────────────────────────────────────────────────────────────
+
+const createAssignment = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { title, description, subjectId, deadline, attachment, remindersSet } = req.body
+
+        if (!title || !subjectId || !deadline) {
+            return res.status(400).json({ message: 'Title, subject, and deadline are required' })
+        }
+
+        const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
+        if (!subject) return
+
+        const assignment = await Assignment.create({
+            title,
+            description,
+            subjectId,
+            class: subject.class,
+            division: subject.division,
+            deadline,
+            attachment: attachment || {},
+            createdBy: req.user.id,
+            remindersSet: remindersSet || [],
+        })
+
+        await logActivity(req.user.id, 'create_assignment', 'Assignment', assignment._id)
+        res.status(201).json({ assignment })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const updateAssignment = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+        const { title, description, deadline, attachment, remindersSet } = req.body
+
+        const assignment = await Assignment.findOne({ _id: id, createdBy: req.user.id })
+        if (!assignment) {
+            return res.status(404).json({ message: 'Assignment not found' })
+        }
+
+        if (title !== undefined) assignment.title = title
+        if (description !== undefined) assignment.description = description
+        if (deadline !== undefined) assignment.deadline = deadline
+        if (attachment !== undefined) assignment.attachment = attachment
+        if (remindersSet !== undefined) assignment.remindersSet = remindersSet
+
+        await assignment.save()
+        await logActivity(req.user.id, 'update_assignment', 'Assignment', assignment._id)
+        res.json({ assignment })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const deleteAssignment = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+
+        const assignment = await Assignment.findOne({ _id: id, createdBy: req.user.id })
+        if (!assignment) {
+            return res.status(404).json({ message: 'Assignment not found' })
+        }
+
+        if (assignment.attachment?.publicId) {
+            await deleteFromCloudinary(assignment.attachment.publicId)
+        }
+
+        await Assignment.findByIdAndDelete(id)
+        await logActivity(req.user.id, 'delete_assignment', 'Assignment', id)
+        res.json({ message: 'Assignment deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getTeacherAssignments = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+
+        // Get all subjects this teacher owns
+        const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
+        const mySubjectIds = mySubjects.map((s) => s._id)
+
+        const { subjectId, class: userClass, division } = req.query
+        const filter = { subjectId: { $in: mySubjectIds } }
+        if (subjectId) filter.subjectId = subjectId
+        if (userClass) filter.class = userClass
+        if (division) filter.division = division
+
+        const assignments = await Assignment.find(filter)
+            .populate('subjectId', 'name code class division')
+            .sort({ deadline: -1 })
+
+        res.json({ assignments })
+    } catch (error) {
+        next(error)
+    }
+}
+
+// ─── MATERIALS ────────────────────────────────────────────────────────────────
+
+const uploadMaterial = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { title, category, subjectId, fileUrl, publicId, fileType } = req.body
+
+        if (!title || !category || !subjectId) {
+            return res.status(400).json({ message: 'Title, category, and subject are required' })
+        }
+
+        const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
+        if (!subject) return
+
+        const material = await Material.create({
+            title,
+            category,
+            subjectId,
+            fileUrl: fileUrl || '',
+            publicId: publicId || '',
+            fileType: fileType || '',
+            uploadedBy: req.user.id,
+            class: subject.class,
+            division: subject.division,
+        })
+
+        await logActivity(req.user.id, 'upload_material', 'Material', material._id)
+        res.status(201).json({ material })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getTeacherMaterials = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+
+        const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
+        const mySubjectIds = mySubjects.map((s) => s._id)
+
+        const { subjectId, category } = req.query
+        const filter = { subjectId: { $in: mySubjectIds } }
+        if (subjectId) filter.subjectId = subjectId
+        if (category) filter.category = category
+
+        const materials = await Material.find(filter)
+            .populate('subjectId', 'name code class division')
+            .sort({ createdAt: -1 })
+
+        res.json({ materials })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const deleteMaterial = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+
+        const material = await Material.findOne({ _id: id, uploadedBy: req.user.id })
+        if (!material) {
+            return res.status(404).json({ message: 'Material not found' })
+        }
+
+        if (material.publicId) {
+            await deleteFromCloudinary(material.publicId)
+        }
+
+        await Material.findByIdAndDelete(id)
+        await logActivity(req.user.id, 'delete_material', 'Material', id)
+        res.json({ message: 'Material deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+// ─── NOTICES ──────────────────────────────────────────────────────────────────
+
+const createNotice = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { title, description, type, targetClass, targetDivision } = req.body
+
+        if (!title) {
+            return res.status(400).json({ message: 'Title required' })
+        }
+
+        const notice = await Notice.create({
+            title,
+            description,
+            type,
+            targetClass: targetClass || [],
+            targetDivision: targetDivision || [],
+            createdBy: req.user.id,
+        })
+
+        await logActivity(req.user.id, 'create_notice', 'Notice', notice._id)
+        res.status(201).json({ notice })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getTeacherNotices = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+
+        const notices = await Notice.find({ createdBy: req.user.id })
+            .populate('createdBy', 'name')
+            .sort({ createdAt: -1 })
+
+        res.json({ notices })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const updateNotice = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+        const { title, description, type, targetClass, targetDivision } = req.body
+
+        const notice = await Notice.findOne({ _id: id, createdBy: req.user.id })
+        if (!notice) {
+            return res.status(404).json({ message: 'Notice not found' })
+        }
+
+        if (title !== undefined) notice.title = title
+        if (description !== undefined) notice.description = description
+        if (type !== undefined) notice.type = type
+        if (targetClass !== undefined) notice.targetClass = targetClass
+        if (targetDivision !== undefined) notice.targetDivision = targetDivision
+
+        await notice.save()
+        await logActivity(req.user.id, 'update_notice', 'Notice', notice._id)
+        res.json({ notice })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const deleteNotice = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+
+        const notice = await Notice.findOne({ _id: id, createdBy: req.user.id })
+        if (!notice) {
+            return res.status(404).json({ message: 'Notice not found' })
+        }
+
+        await Notice.findByIdAndDelete(id)
+        await logActivity(req.user.id, 'delete_notice', 'Notice', id)
+        res.json({ message: 'Notice deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+// ─── ESSAYS ───────────────────────────────────────────────────────────────────
+
+const createEssay = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { title, description, subjectId, deadline, wordLimit } = req.body
+
+        if (!title || !subjectId || !deadline) {
+            return res.status(400).json({ message: 'Title, subject, and deadline are required' })
+        }
+
+        const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
+        if (!subject) return
+
+        const essay = await Essay.create({
+            topic: title,
+            instructions: description || '',
+            wordLimit: wordLimit || 500,
+            subjectId,
+            class: subject.class,
+            division: subject.division,
+            deadline,
+            createdBy: req.user.id,
+        })
+
+        await logActivity(req.user.id, 'create_essay', 'Essay', essay._id)
+        res.status(201).json({ essay })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getTeacherEssays = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+
+        const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
+        const mySubjectIds = mySubjects.map((s) => s._id)
+
+        const { subjectId } = req.query
+        const filter = { subjectId: { $in: mySubjectIds } }
+        if (subjectId) filter.subjectId = subjectId
+
+        const essays = await Essay.find(filter)
+            .populate('subjectId', 'name code class division')
+            .sort({ deadline: -1 })
+
+        res.json({ essays })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const updateEssay = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+        const { title, description, deadline, wordLimit } = req.body
+
+        const essay = await Essay.findOne({ _id: id, createdBy: req.user.id })
+        if (!essay) {
+            return res.status(404).json({ message: 'Essay not found' })
+        }
+
+        if (title !== undefined) essay.topic = title
+        if (description !== undefined) essay.instructions = description
+        if (deadline !== undefined) essay.deadline = deadline
+        if (wordLimit !== undefined) essay.wordLimit = wordLimit
+
+        await essay.save()
+        await logActivity(req.user.id, 'update_essay', 'Essay', essay._id)
+        res.json({ essay })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const deleteEssay = async (req, res, next) => {
+    try {
+        checkTeacher(req, res, next)
+        const { id } = req.params
+
+        const essay = await Essay.findOne({ _id: id, createdBy: req.user.id })
+        if (!essay) {
+            return res.status(404).json({ message: 'Essay not found' })
+        }
+
+        await Essay.findByIdAndDelete(id)
+        await logActivity(req.user.id, 'delete_essay', 'Essay', id)
+        res.json({ message: 'Essay deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+module.exports = {
+    getTeacherDashboard,
+    createAssignment,
+    updateAssignment,
+    deleteAssignment,
+    getTeacherAssignments,
+    uploadMaterial,
+    getTeacherMaterials,
+    deleteMaterial,
+    createNotice,
+    getTeacherNotices,
+    updateNotice,
+    deleteNotice,
+    createEssay,
+    getTeacherEssays,
+    updateEssay,
+    deleteEssay,
+}

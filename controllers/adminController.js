@@ -1,0 +1,386 @@
+const bcrypt = require('bcryptjs')
+const User = require('../models/User')
+const Department = require('../models/Department')
+const Subject = require('../models/Subject')
+const Assignment = require('../models/Assignment')
+const Material = require('../models/Material')
+const Notice = require('../models/Notice')
+const ActivityLog = require('../models/ActivityLog')
+const { logActivity } = require('../utils/activityLog')
+const { DEFAULT_SUBJECTS } = require('../utils/subjectDefaults')
+
+const checkAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Admin access required' })
+    }
+    next()
+}
+
+const createDepartment = async (req, res, next) => {
+    try {
+        const { name } = req.body
+
+        if (!name) {
+            return res.status(400).json({ message: 'Department name required' })
+        }
+
+        const existing = await Department.findOne({ name })
+        if (existing) {
+            return res.status(409).json({ message: 'Department already exists' })
+        }
+
+        const department = await Department.create({ name })
+        await logActivity(req.user.id, 'create_department', 'Department', department._id)
+
+        res.status(201).json({ department })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const createClass = async (req, res, next) => {
+    try {
+        const { name } = req.body
+
+        if (!name) {
+            return res.status(400).json({ message: 'Class name required' })
+        }
+
+        res.status(201).json({ message: 'Class created', class: name })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const createTeacher = async (req, res, next) => {
+    try {
+        const { name, email, password, department } = req.body
+
+        if (!name || !email || !password) {
+            return res.status(400).json({ message: 'Name, email, and password required' })
+        }
+
+        const existing = await User.findOne({ email })
+        if (existing) {
+            return res.status(409).json({ message: 'Email already registered' })
+        }
+
+        const hashed = await bcrypt.hash(password, 10)
+        const teacher = await User.create({
+            name,
+            email,
+            password: hashed,
+            role: 'teacher',
+            department,
+        })
+
+        await logActivity(req.user.id, 'create_teacher', 'User', teacher._id)
+
+        res.status(201).json({ teacher })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const createStudent = async (req, res, next) => {
+    try {
+        const { name, email, password, class: userClass, division, department } = req.body
+
+        if (!name || !email || !password || !userClass || !division || !department) {
+            return res.status(400).json({ message: 'All fields required' })
+        }
+
+        const existing = await User.findOne({ email })
+        if (existing) {
+            return res.status(409).json({ message: 'Email already registered' })
+        }
+
+        const hashed = await bcrypt.hash(password, 10)
+        const student = await User.create({
+            name,
+            email,
+            password: hashed,
+            role: 'student',
+            class: userClass,
+            division,
+            department,
+        })
+
+        await logActivity(req.user.id, 'create_student', 'User', student._id)
+
+        res.status(201).json({ student })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const createSubject = async (req, res, next) => {
+    try {
+        const { name, code, teacherId, class: userClass, division, department } = req.body
+
+        if (!name || !code || !teacherId || !userClass || !division || !department) {
+            return res.status(400).json({ message: 'All fields required' })
+        }
+
+        const teacher = await User.findOne({ _id: teacherId, role: 'teacher' })
+        if (!teacher) {
+            return res.status(404).json({ message: 'Teacher not found' })
+        }
+
+        const subject = await Subject.create({
+            name,
+            code,
+            teacherId,
+            class: userClass,
+            division,
+            department,
+        })
+
+        await logActivity(req.user.id, 'create_subject', 'Subject', subject._id)
+
+        res.status(201).json({ subject })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const assignSubjectToTeacher = async (req, res, next) => {
+    try {
+        const { subjectId, teacherId } = req.body
+
+        if (!subjectId || !teacherId) {
+            return res.status(400).json({ message: 'Subject ID and Teacher ID required' })
+        }
+
+        const subject = await Subject.findById(subjectId)
+        if (!subject) {
+            return res.status(404).json({ message: 'Subject not found' })
+        }
+
+        const teacher = await User.findOne({ _id: teacherId, role: 'teacher' })
+        if (!teacher) {
+            return res.status(404).json({ message: 'Teacher not found' })
+        }
+
+        subject.teacherId = teacherId
+        await subject.save()
+
+        await logActivity(req.user.id, 'assign_subject', 'Subject', subject._id)
+
+        res.json({ subject })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getStats = async (req, res, next) => {
+    try {
+        const [
+            totalUsers,
+            totalTeachers,
+            totalStudents,
+            totalDepartments,
+            totalSubjects,
+            totalAssignments,
+            totalMaterials,
+            totalNotices,
+        ] = await Promise.all([
+            User.countDocuments(),
+            User.countDocuments({ role: 'teacher' }),
+            User.countDocuments({ role: 'student' }),
+            Department.countDocuments(),
+            Subject.countDocuments(),
+            Assignment.countDocuments(),
+            Material.countDocuments(),
+            Notice.countDocuments(),
+        ])
+
+        res.json({
+            stats: {
+                totalUsers,
+                totalTeachers,
+                totalStudents,
+                totalDepartments,
+                totalSubjects,
+                totalAssignments,
+                totalMaterials,
+                totalNotices,
+            },
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const updateUser = async (req, res, next) => {
+    try {
+        const { id } = req.params
+        const { name, email, role, class: userClass, division, department, isActive } = req.body
+
+        const user = await User.findById(id)
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' })
+        }
+
+        if (name !== undefined) user.name = name
+        if (email !== undefined) user.email = email
+        if (role !== undefined) user.role = role
+        if (userClass !== undefined) user.class = userClass
+        if (division !== undefined) user.division = division
+        if (department !== undefined) user.department = department
+        if (isActive !== undefined) user.isActive = isActive
+
+        await user.save()
+        await logActivity(req.user.id, 'update_user', 'User', user._id)
+
+        res.json({ user })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const deleteUser = async (req, res, next) => {
+    try {
+        const { id } = req.params
+
+        const user = await User.findById(id)
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' })
+        }
+
+        await User.findByIdAndDelete(id)
+        await logActivity(req.user.id, 'delete_user', 'User', id)
+
+        res.json({ message: 'User deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const getActivityLogs = async (req, res, next) => {
+    try {
+        const logs = await ActivityLog.find()
+            .populate('userId', 'name email role')
+            .sort({ createdAt: -1 })
+            .limit(25)
+        res.json({ logs })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const listUsers = async (req, res, next) => {
+    try {
+        const { role, department } = req.query
+        const filter = {}
+        if (role) filter.role = role
+        if (department) filter.department = department
+        const users = await User.find(filter).sort({ createdAt: -1 })
+        res.json({ users })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const seedDefaultSubjects = async (req, res, next) => {
+    try {
+        const { class: userClass, division, department, teacherId } = req.body
+
+        if (!userClass || !division || !department || !teacherId) {
+            return res.status(400).json({ message: 'class, division, department, and teacherId required' })
+        }
+
+        const subjectList = DEFAULT_SUBJECTS[userClass]
+        if (!subjectList) {
+            return res.status(400).json({ message: 'Invalid class. Use SY, TY, or LY' })
+        }
+
+        const teacher = await User.findOne({ _id: teacherId, role: 'teacher' })
+        if (!teacher) {
+            return res.status(404).json({ message: 'Teacher not found' })
+        }
+
+        const created = []
+        const skipped = []
+
+        for (const subDef of subjectList) {
+            const code = `${subDef.code}-${division}`
+            const existing = await Subject.findOne({ code, class: userClass, division })
+            if (existing) {
+                skipped.push(subDef.name)
+                continue
+            }
+            const subject = await Subject.create({
+                name: subDef.name,
+                code,
+                teacherId,
+                class: userClass,
+                division,
+                department,
+            })
+            await logActivity(req.user.id, 'seed_subject', 'Subject', subject._id)
+            created.push(subject)
+        }
+
+        res.status(201).json({
+            message: `Seeded ${created.length} subject(s). Skipped ${skipped.length} (already exist).`,
+            created,
+            skipped,
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const adminDeleteSubject = async (req, res, next) => {
+    try {
+        const subject = await Subject.findById(req.params.id)
+        if (!subject) {
+            return res.status(404).json({ message: 'Subject not found' })
+        }
+        await subject.deleteOne()
+        await logActivity(req.user.id, 'delete_subject', 'Subject', subject._id)
+        res.json({ message: 'Subject deleted' })
+    } catch (error) {
+        next(error)
+    }
+}
+
+const adminUpdateSubject = async (req, res, next) => {
+    try {
+        const subject = await Subject.findById(req.params.id)
+        if (!subject) {
+            return res.status(404).json({ message: 'Subject not found' })
+        }
+        const { name, code, teacherId, class: userClass, division, department } = req.body
+        if (name !== undefined) subject.name = name
+        if (code !== undefined) subject.code = code
+        if (teacherId !== undefined) subject.teacherId = teacherId
+        if (userClass !== undefined) subject.class = userClass
+        if (division !== undefined) subject.division = division
+        if (department !== undefined) subject.department = department
+        await subject.save()
+        await logActivity(req.user.id, 'update_subject', 'Subject', subject._id)
+        res.json({ subject })
+    } catch (error) {
+        next(error)
+    }
+}
+
+module.exports = {
+    checkAdmin,
+    createDepartment,
+    createClass,
+    createTeacher,
+    createStudent,
+    createSubject,
+    assignSubjectToTeacher,
+    getStats,
+    updateUser,
+    deleteUser,
+    getActivityLogs,
+    listUsers,
+    seedDefaultSubjects,
+    adminDeleteSubject,
+    adminUpdateSubject,
+}
