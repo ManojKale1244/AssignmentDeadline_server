@@ -8,13 +8,32 @@ const rateLimit = require('express-rate-limit')
 const connectDB = require('./config/db')
 const errorHandler = require('./middleware/errorHandler')
 const { startReminderScheduler } = require('./utils/reminders')
+const seedAdmin = require('./utils/seedAdmin')
 
 const app = express()
 
+// Trust the reverse proxy on Render/Heroku so express-rate-limit reads real client IPs
+app.set('trust proxy', 1)
+
 app.use(helmet())
+const allowedOrigins = (process.env.CLIENT_URL || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
 app.use(
     cors({
-        origin: process.env.CLIENT_URL || '*',
+        origin: function (origin, callback) {
+            // Allow requests with no origin (mobile apps, Postman, server-to-server)
+            if (!origin) return callback(null, true)
+            if (
+                allowedOrigins.length === 0 ||
+                allowedOrigins.includes(origin)
+            ) {
+                return callback(null, true)
+            }
+            callback(new Error('Not allowed by CORS'))
+        },
         credentials: true,
     })
 )
@@ -63,6 +82,7 @@ const port = process.env.PORT || 5000
 const start = async () => {
     try {
         await connectDB()
+        await seedAdmin()
         startReminderScheduler()
         app.listen(port, () => {
             console.log(`EduTrack server running on port ${port}`)
