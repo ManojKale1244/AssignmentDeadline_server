@@ -28,7 +28,7 @@ const AssignmentSchema = new mongoose.Schema(
         subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
         class: {
             type: String,
-            enum: ['SY', 'TY', 'LY', 'ALL'],
+            enum: ['SY', 'TY', 'LY'],
             required: true,
         },
         division: {

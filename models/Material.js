@@ -27,7 +27,7 @@ const MaterialSchema = new mongoose.Schema(
         uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         class: {
             type: String,
-            enum: ['SY', 'TY', 'LY', 'ALL'],
+            enum: ['SY', 'TY', 'LY'],
             required: true,
         },
         division: {
