@@ -10,7 +10,7 @@ const EssaySchema = new mongoose.Schema(
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         class: {
             type: String,
-            enum: ['SY', 'TY', 'LY'],
+            enum: ['SY', 'TY', 'LY', 'ALL'],
             required: true,
         },
         division: {
