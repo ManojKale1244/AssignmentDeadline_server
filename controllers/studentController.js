@@ -26,7 +26,7 @@ const getStudentDashboard = async (req, res, next) => {
         const tomorrow = new Date(today)
         tomorrow.setDate(tomorrow.getDate() + 1)
 
-        const classFilter = { class: user.class, division: user.division }
+        const classFilter = { class: { $in: [user.class, 'ALL'] }, division: user.division }
 
         const [upcomingDeadlines, todayWork, totalAssignments, totalMaterials] = await Promise.all([
             Assignment.find({ ...classFilter, deadline: { $gte: today } })
@@ -62,7 +62,7 @@ const getStudentSubjects = async (req, res, next) => {
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
-        const subjects = await Subject.find({ class: user.class, division: user.division })
+        const subjects = await Subject.find({ class: { $in: [user.class, 'ALL'] }, division: user.division })
             .populate('teacherId', 'name')
             .sort({ name: 1 })
 
@@ -84,12 +84,12 @@ const getSubjectMaterials = async (req, res, next) => {
         if (!subject) return res.status(404).json({ message: 'Subject not found' })
 
         // Enforce: student can only access their own class+division subjects
-        if (subject.class !== user.class || subject.division !== user.division) {
+        if (subject.class !== user.class && subject.class !== 'ALL' || subject.division !== user.division) {
             return res.status(403).json({ message: 'Access denied: subject not in your class/division' })
         }
 
         const { category } = req.query
-        const filter = { subjectId: req.params.id, class: user.class, division: user.division }
+        const filter = { subjectId: req.params.id, class: { $in: [user.class, 'ALL'] }, division: user.division }
         if (category) filter.category = category
 
         const materials = await Material.find(filter)
@@ -112,7 +112,7 @@ const getStudentAssignments = async (req, res, next) => {
         if (!user) return res.status(404).json({ message: 'User not found' })
 
         const { subjectId } = req.query
-        const filter = { class: user.class, division: user.division }
+        const filter = { class: { $in: [user.class, 'ALL'] }, division: user.division }
         if (subjectId) filter.subjectId = subjectId
 
         const assignments = await Assignment.find(filter)
@@ -135,7 +135,7 @@ const getStudentMaterials = async (req, res, next) => {
         if (!user) return res.status(404).json({ message: 'User not found' })
 
         const { subjectId, category } = req.query
-        const filter = { class: user.class, division: user.division }
+        const filter = { class: { $in: [user.class, 'ALL'] }, division: user.division }
         if (subjectId) filter.subjectId = subjectId
         if (category) filter.category = category
 
@@ -190,7 +190,7 @@ const getStudentEssays = async (req, res, next) => {
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
-        const essays = await Essay.find({ class: user.class, division: user.division })
+        const essays = await Essay.find({ class: { $in: [user.class, 'ALL'] }, division: user.division })
             .populate('subjectId', 'name code')
             .sort({ deadline: -1 })
 
@@ -214,7 +214,7 @@ const getCalendar = async (req, res, next) => {
         const startDate = new Date(year || now.getFullYear(), month !== undefined ? month : now.getMonth(), 1)
         const endDate = new Date(year || now.getFullYear(), month !== undefined ? Number(month) + 1 : now.getMonth() + 1, 0)
 
-        const classFilter = { class: user.class, division: user.division }
+        const classFilter = { class: { $in: [user.class, 'ALL'] }, division: user.division }
 
         const [assignments, essays] = await Promise.all([
             Assignment.find({ ...classFilter, deadline: { $gte: startDate, $lte: endDate } })
@@ -262,7 +262,7 @@ const searchContent = async (req, res, next) => {
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
-        const classFilter = { class: user.class, division: user.division }
+        const classFilter = { class: { $in: [user.class, 'ALL'] }, division: user.division }
         const searchRegex = new RegExp(q, 'i')
 
         const [assignments, materials, essays] = await Promise.all([

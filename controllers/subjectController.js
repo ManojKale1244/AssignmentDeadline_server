@@ -83,7 +83,7 @@ const getSubjectsForStudent = async (req, res, next) => {
             return res.status(400).json({ message: 'class and division query params required' })
         }
 
-        const subjects = await Subject.find({ class: studentClass, division })
+        const subjects = await Subject.find({ class: { $in: [studentClass, 'ALL'] }, division })
             .populate('teacherId', 'name')
             .sort({ name: 1 })
 

@@ -7,7 +7,7 @@ const SubjectSchema = new mongoose.Schema(
         teacherId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         class: {
             type: String,
-            enum: ['SY', 'TY', 'LY'],
+            enum: ['SY', 'TY', 'LY', 'ALL'],
             required: true,
         },
         division: {
