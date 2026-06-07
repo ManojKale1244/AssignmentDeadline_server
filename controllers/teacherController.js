@@ -72,7 +72,7 @@ const getTeacherDashboard = async (req, res, next) => {
 const createAssignment = async (req, res, next) => {
     try {
         checkTeacher(req, res, next)
-        const { title, description, subjectId, deadline, attachment, remindersSet } = req.body
+        const { title, description, subjectId, deadline, attachment, remindersSet, class: targetClass, division: targetDivision } = req.body
 
         if (!title || !subjectId || !deadline) {
             return res.status(400).json({ message: 'Title, subject, and deadline are required' })
@@ -81,20 +81,33 @@ const createAssignment = async (req, res, next) => {
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
         if (!subject) return
 
-        const assignment = await Assignment.create({
-            title,
-            description,
-            subjectId,
-            class: subject.class,
-            division: subject.division,
-            deadline,
-            attachment: attachment || {},
-            createdBy: req.user.id,
-            remindersSet: remindersSet || [],
-        })
+        const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
+        const createdAssignments = []
 
-        await logActivity(req.user.id, 'create_assignment', 'Assignment', assignment._id)
-        res.status(201).json({ assignment })
+        for (const div of divisionsToCreate) {
+            const targetSubject = await Subject.findOne({
+                code: subject.code,
+                class: targetClass || subject.class,
+                division: div,
+                teacherId: req.user.id
+            })
+
+            const assignment = await Assignment.create({
+                title,
+                description,
+                subjectId: targetSubject ? targetSubject._id : subjectId,
+                class: targetClass || subject.class,
+                division: div,
+                deadline,
+                attachment: attachment || {},
+                createdBy: req.user.id,
+                remindersSet: remindersSet || [],
+            })
+            await logActivity(req.user.id, 'create_assignment', 'Assignment', assignment._id)
+            createdAssignments.push(assignment)
+        }
+
+        res.status(201).json({ assignment: createdAssignments[0], created: createdAssignments })
     } catch (error) {
         next(error)
     }
@@ -176,7 +189,7 @@ const getTeacherAssignments = async (req, res, next) => {
 const uploadMaterial = async (req, res, next) => {
     try {
         checkTeacher(req, res, next)
-        const { title, category, subjectId, fileUrl, publicId, fileType } = req.body
+        const { title, category, subjectId, fileUrl, publicId, fileType, class: targetClass, division: targetDivision } = req.body
 
         if (!title || !category || !subjectId) {
             return res.status(400).json({ message: 'Title, category, and subject are required' })
@@ -185,20 +198,33 @@ const uploadMaterial = async (req, res, next) => {
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
         if (!subject) return
 
-        const material = await Material.create({
-            title,
-            category,
-            subjectId,
-            fileUrl: fileUrl || '',
-            publicId: publicId || '',
-            fileType: fileType || '',
-            uploadedBy: req.user.id,
-            class: subject.class,
-            division: subject.division,
-        })
+        const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
+        const createdMaterials = []
 
-        await logActivity(req.user.id, 'upload_material', 'Material', material._id)
-        res.status(201).json({ material })
+        for (const div of divisionsToCreate) {
+            const targetSubject = await Subject.findOne({
+                code: subject.code,
+                class: targetClass || subject.class,
+                division: div,
+                teacherId: req.user.id
+            })
+
+            const material = await Material.create({
+                title,
+                category,
+                subjectId: targetSubject ? targetSubject._id : subjectId,
+                fileUrl: fileUrl || '',
+                publicId: publicId || '',
+                fileType: fileType || '',
+                uploadedBy: req.user.id,
+                class: targetClass || subject.class,
+                division: div,
+            })
+            await logActivity(req.user.id, 'upload_material', 'Material', material._id)
+            createdMaterials.push(material)
+        }
+
+        res.status(201).json({ material: createdMaterials[0], created: createdMaterials })
     } catch (error) {
         next(error)
     }
