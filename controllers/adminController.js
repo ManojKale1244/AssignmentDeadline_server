@@ -127,18 +127,44 @@ const createSubject = async (req, res, next) => {
             return res.status(404).json({ message: 'Teacher not found' })
         }
 
-        const subject = await Subject.create({
-            name,
-            code,
-            teacherId,
-            class: userClass,
-            division,
-            department,
+        const classes = Array.isArray(userClass) ? userClass : [userClass]
+        const divisions = Array.isArray(division) ? division : [division]
+
+        const createdSubjects = []
+        const skippedSubjects = []
+
+        for (const cls of classes) {
+            for (const div of divisions) {
+                const existing = await Subject.findOne({ code, class: cls, division: div })
+                if (existing) {
+                    skippedSubjects.push(`${cls}-${div}`)
+                    continue
+                }
+
+                const subject = await Subject.create({
+                    name,
+                    code,
+                    teacherId,
+                    class: cls,
+                    division: div,
+                    department,
+                })
+                await logActivity(req.user.id, 'create_subject', 'Subject', subject._id)
+                createdSubjects.push(subject)
+            }
+        }
+
+        if (createdSubjects.length === 0) {
+            return res.status(400).json({ 
+                message: `Subject combination(s) ${skippedSubjects.join(', ')} already registered.` 
+            })
+        }
+
+        res.status(201).json({ 
+            subject: createdSubjects[0],
+            created: createdSubjects,
+            message: `Registered ${createdSubjects.length} subject(s) successfully.`
         })
-
-        await logActivity(req.user.id, 'create_subject', 'Subject', subject._id)
-
-        res.status(201).json({ subject })
     } catch (error) {
         next(error)
     }
