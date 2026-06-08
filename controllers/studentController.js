@@ -342,6 +342,12 @@ const getAssignmentAttachment = async (req, res, next) => {
                 return fileRes.pipe(res)
             }
 
+            if (fileRes.statusCode === 401 || fileRes.headers['x-cld-error'] === 'deny or ACL failure') {
+                return res.status(401).json({
+                    message: 'PDF/ZIP delivery is restricted on your Cloudinary account. Please go to your Cloudinary Console > Settings > Security > Restricted media types, and ensure "Allow delivery of PDF and ZIP files" is enabled.'
+                })
+            }
+
             // If the stored URL failed, try alternative Cloudinary URL formats
             // Sometimes files uploaded as 'auto' end up as 'raw' type
             if (publicId) {
@@ -363,6 +369,12 @@ const getAssignmentAttachment = async (req, res, next) => {
                         res.setHeader('Content-Length', altRes.headers['content-length'])
                     }
                     return altRes.pipe(res)
+                }
+
+                if (altRes.statusCode === 401 || altRes.headers['x-cld-error'] === 'deny or ACL failure') {
+                    return res.status(401).json({
+                        message: 'PDF/ZIP delivery is restricted on your Cloudinary account. Please go to your Cloudinary Console > Settings > Security > Restricted media types, and ensure "Allow delivery of PDF and ZIP files" is enabled.'
+                    })
                 }
             }
 
