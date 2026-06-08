@@ -1,6 +1,8 @@
 const express = require('express')
+const multer = require('multer')
 const auth = require('../middleware/auth')
 const {
+    checkTeacher,
     getTeacherDashboard,
     createAssignment,
     updateAssignment,
@@ -20,21 +22,26 @@ const {
 } = require('../controllers/teacherController')
 
 const router = express.Router()
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 },
+})
 
-// All teacher routes require authentication
+// All teacher routes require authentication and teacher role
 router.use(auth)
+router.use(checkTeacher)
 
 router.get('/dashboard', getTeacherDashboard)
 
 // Assignments
 router.get('/assignments', getTeacherAssignments)
-router.post('/assignments', createAssignment)
-router.put('/assignments/:id', updateAssignment)
+router.post('/assignments', upload.single('file'), createAssignment)
+router.put('/assignments/:id', upload.single('file'), updateAssignment)
 router.delete('/assignments/:id', deleteAssignment)
 
 // Materials
 router.get('/materials', getTeacherMaterials)
-router.post('/materials/upload', uploadMaterial)
+router.post('/materials/upload', upload.single('file'), uploadMaterial)
 router.delete('/materials/:id', deleteMaterial)
 
 // Notices

@@ -3,7 +3,7 @@ const Material = require('../models/Material')
 const Notice = require('../models/Notice')
 const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
-const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinary')
+const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
 const { logActivity } = require('../utils/activityLog')
 
 const checkTeacher = (req, res, next) => {
@@ -34,8 +34,6 @@ const verifySubjectOwnership = async (subjectId, teacherId, res) => {
 
 const getTeacherDashboard = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-
         const today = new Date()
         today.setHours(0, 0, 0, 0)
 
@@ -71,8 +69,7 @@ const getTeacherDashboard = async (req, res, next) => {
 
 const createAssignment = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-        const { title, description, subjectId, deadline, attachment, remindersSet, class: targetClass, division: targetDivision } = req.body
+        const { title, description, subjectId, deadline, remindersSet, class: targetClass, division: targetDivision } = req.body
 
         if (!title || !subjectId || !deadline) {
             return res.status(400).json({ message: 'Title, subject, and deadline are required' })
@@ -80,6 +77,28 @@ const createAssignment = async (req, res, next) => {
 
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
         if (!subject) return
+
+        let attachment = {}
+        if (req.file) {
+            const uploadResult = await uploadBuffer(req.file.buffer, {
+                folder: 'edutrack/assignments',
+                resource_type: 'auto',
+            })
+            attachment = {
+                url: uploadResult.secure_url,
+                publicId: uploadResult.public_id,
+                fileType: uploadResult.format || req.file.mimetype || '',
+            }
+        }
+
+        let parsedReminders = []
+        if (remindersSet) {
+            try {
+                parsedReminders = typeof remindersSet === 'string' ? JSON.parse(remindersSet) : remindersSet
+            } catch (e) {
+                parsedReminders = remindersSet
+            }
+        }
 
         const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
         const createdAssignments = []
@@ -99,9 +118,9 @@ const createAssignment = async (req, res, next) => {
                 class: targetClass || subject.class,
                 division: div,
                 deadline,
-                attachment: attachment || {},
+                attachment,
                 createdBy: req.user.id,
-                remindersSet: remindersSet || [],
+                remindersSet: parsedReminders,
             })
             await logActivity(req.user.id, 'create_assignment', 'Assignment', assignment._id)
             createdAssignments.push(assignment)
@@ -115,9 +134,8 @@ const createAssignment = async (req, res, next) => {
 
 const updateAssignment = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
-        const { title, description, deadline, attachment, remindersSet } = req.body
+        const { title, description, deadline, attachment: bodyAttachment, remindersSet } = req.body
 
         const assignment = await Assignment.findOne({ _id: id, createdBy: req.user.id })
         if (!assignment) {
@@ -127,12 +145,44 @@ const updateAssignment = async (req, res, next) => {
         if (title !== undefined) assignment.title = title
         if (description !== undefined) assignment.description = description
         if (deadline !== undefined) assignment.deadline = deadline
-        if (attachment !== undefined) assignment.attachment = attachment
-        if (remindersSet !== undefined) assignment.remindersSet = remindersSet
+
+        let parsedReminders = undefined
+        if (remindersSet !== undefined) {
+            try {
+                parsedReminders = typeof remindersSet === 'string' ? JSON.parse(remindersSet) : remindersSet
+            } catch (e) {
+                parsedReminders = remindersSet
+            }
+        }
+        if (parsedReminders !== undefined) assignment.remindersSet = parsedReminders
+
+        // Handle attachment
+        if (req.file) {
+            if (assignment.attachment?.publicId) {
+                await deleteAsset(assignment.attachment.publicId)
+            }
+            const uploadResult = await uploadBuffer(req.file.buffer, {
+                folder: 'edutrack/assignments',
+                resource_type: 'auto',
+            })
+            assignment.attachment = {
+                url: uploadResult.secure_url,
+                publicId: uploadResult.public_id,
+                fileType: uploadResult.format || req.file.mimetype || '',
+            }
+        } else if (bodyAttachment !== undefined) {
+            try {
+                assignment.attachment = typeof bodyAttachment === 'string' ? JSON.parse(bodyAttachment) : bodyAttachment
+            } catch (e) {
+                // ignore
+            }
+        }
 
         await assignment.save()
         await logActivity(req.user.id, 'update_assignment', 'Assignment', assignment._id)
-        res.json({ assignment })
+        
+        const updatedAssignment = await Assignment.findById(assignment._id).populate('subjectId', 'name code class division')
+        res.json({ assignment: updatedAssignment })
     } catch (error) {
         next(error)
     }
@@ -140,7 +190,6 @@ const updateAssignment = async (req, res, next) => {
 
 const deleteAssignment = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
 
         const assignment = await Assignment.findOne({ _id: id, createdBy: req.user.id })
@@ -149,7 +198,7 @@ const deleteAssignment = async (req, res, next) => {
         }
 
         if (assignment.attachment?.publicId) {
-            await deleteFromCloudinary(assignment.attachment.publicId)
+            await deleteAsset(assignment.attachment.publicId)
         }
 
         await Assignment.findByIdAndDelete(id)
@@ -162,8 +211,6 @@ const deleteAssignment = async (req, res, next) => {
 
 const getTeacherAssignments = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-
         // Get all subjects this teacher owns
         const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
         const mySubjectIds = mySubjects.map((s) => s._id)
@@ -188,15 +235,24 @@ const getTeacherAssignments = async (req, res, next) => {
 
 const uploadMaterial = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-        const { title, category, subjectId, fileUrl, publicId, fileType, class: targetClass, division: targetDivision } = req.body
+        const { title, category, subjectId, class: targetClass, division: targetDivision } = req.body
 
         if (!title || !category || !subjectId) {
             return res.status(400).json({ message: 'Title, category, and subject are required' })
         }
 
+        if (!req.file) {
+            return res.status(400).json({ message: 'File is required' })
+        }
+
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
         if (!subject) return
+
+        // Upload file to Cloudinary
+        const uploadResult = await uploadBuffer(req.file.buffer, {
+            folder: 'edutrack/materials',
+            resource_type: 'auto',
+        })
 
         const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
         const createdMaterials = []
@@ -213,9 +269,9 @@ const uploadMaterial = async (req, res, next) => {
                 title,
                 category,
                 subjectId: targetSubject ? targetSubject._id : subjectId,
-                fileUrl: fileUrl || '',
-                publicId: publicId || '',
-                fileType: fileType || '',
+                fileUrl: uploadResult.secure_url,
+                publicId: uploadResult.public_id,
+                fileType: uploadResult.format || req.file.mimetype || '',
                 uploadedBy: req.user.id,
                 class: targetClass || subject.class,
                 division: div,
@@ -232,8 +288,6 @@ const uploadMaterial = async (req, res, next) => {
 
 const getTeacherMaterials = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-
         const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
         const mySubjectIds = mySubjects.map((s) => s._id)
 
@@ -254,7 +308,6 @@ const getTeacherMaterials = async (req, res, next) => {
 
 const deleteMaterial = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
 
         const material = await Material.findOne({ _id: id, uploadedBy: req.user.id })
@@ -263,7 +316,7 @@ const deleteMaterial = async (req, res, next) => {
         }
 
         if (material.publicId) {
-            await deleteFromCloudinary(material.publicId)
+            await deleteAsset(material.publicId)
         }
 
         await Material.findByIdAndDelete(id)
@@ -278,7 +331,6 @@ const deleteMaterial = async (req, res, next) => {
 
 const createNotice = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { title, description, type, targetClass, targetDivision } = req.body
 
         if (!title) {
@@ -303,8 +355,6 @@ const createNotice = async (req, res, next) => {
 
 const getTeacherNotices = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-
         const notices = await Notice.find({ createdBy: req.user.id })
             .populate('createdBy', 'name')
             .sort({ createdAt: -1 })
@@ -317,7 +367,6 @@ const getTeacherNotices = async (req, res, next) => {
 
 const updateNotice = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
         const { title, description, type, targetClass, targetDivision } = req.body
 
@@ -342,7 +391,6 @@ const updateNotice = async (req, res, next) => {
 
 const deleteNotice = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
 
         const notice = await Notice.findOne({ _id: id, createdBy: req.user.id })
@@ -362,7 +410,6 @@ const deleteNotice = async (req, res, next) => {
 
 const createEssay = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { title, description, subjectId, deadline, wordLimit } = req.body
 
         if (!title || !subjectId || !deadline) {
@@ -392,8 +439,6 @@ const createEssay = async (req, res, next) => {
 
 const getTeacherEssays = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
-
         const mySubjects = await Subject.find({ teacherId: req.user.id }).select('_id')
         const mySubjectIds = mySubjects.map((s) => s._id)
 
@@ -413,7 +458,6 @@ const getTeacherEssays = async (req, res, next) => {
 
 const updateEssay = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
         const { title, description, deadline, wordLimit } = req.body
 
@@ -437,7 +481,6 @@ const updateEssay = async (req, res, next) => {
 
 const deleteEssay = async (req, res, next) => {
     try {
-        checkTeacher(req, res, next)
         const { id } = req.params
 
         const essay = await Essay.findOne({ _id: id, createdBy: req.user.id })
@@ -454,6 +497,7 @@ const deleteEssay = async (req, res, next) => {
 }
 
 module.exports = {
+    checkTeacher,
     getTeacherDashboard,
     createAssignment,
     updateAssignment,
