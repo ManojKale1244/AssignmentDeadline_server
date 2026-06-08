@@ -58,7 +58,13 @@ const sendTestNotification = async (req, res, next) => {
 
 const getNotifications = async (req, res, next) => {
     try {
-        const notifications = await Notification.find({ userId: req.user.id })
+        // Only return notifications from the last 24 hours
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+        const notifications = await Notification.find({
+            userId: req.user.id,
+            createdAt: { $gte: twentyFourHoursAgo },
+        })
             .sort({ createdAt: -1 })
             .limit(50)
 
@@ -67,6 +73,22 @@ const getNotifications = async (req, res, next) => {
         next(error)
     }
 }
+
+const markAllAsRead = async (req, res, next) => {
+    try {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
+        await Notification.updateMany(
+            { userId: req.user.id, read: false, createdAt: { $gte: twentyFourHoursAgo } },
+            { $set: { read: true } }
+        )
+
+        res.json({ message: 'All notifications marked as read' })
+    } catch (error) {
+        next(error)
+    }
+}
+
 
 const markAsRead = async (req, res, next) => {
     try {
@@ -93,4 +115,5 @@ module.exports = {
     sendTestNotification,
     getNotifications,
     markAsRead,
+    markAllAsRead,
 }
