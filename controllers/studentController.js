@@ -273,6 +273,28 @@ const searchContent = async (req, res, next) => {
 
 // ─── ASSIGNMENT ATTACHMENT PROXY ──────────────────────────────────────────────
 
+/**
+ * Follow redirects for http/https.get (Node built-in doesn't follow them)
+ */
+const followRedirects = (url, maxRedirects = 5) => {
+    return new Promise((resolve, reject) => {
+        const https = require('https')
+        const http = require('http')
+        const protocol = url.startsWith('https') ? https : http
+
+        protocol.get(url, (response) => {
+            if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+                if (maxRedirects <= 0) return reject(new Error('Too many redirects'))
+                const redirectUrl = response.headers.location.startsWith('http')
+                    ? response.headers.location
+                    : new URL(response.headers.location, url).href
+                return resolve(followRedirects(redirectUrl, maxRedirects - 1))
+            }
+            resolve(response)
+        }).on('error', reject)
+    })
+}
+
 const getAssignmentAttachment = async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id)
@@ -291,41 +313,64 @@ const getAssignmentAttachment = async (req, res, next) => {
         }
 
         const fileUrl = assignment.attachment.url
-        const action = req.query.action || 'download' // 'view' or 'download'
+        const publicId = assignment.attachment.publicId
+        const action = req.query.action || 'download'
 
-        // Fetch the file from Cloudinary using the server (bypasses browser 401)
-        const https = require('https')
-        const http = require('http')
-        const protocol = fileUrl.startsWith('https') ? https : http
+        // Build filename from assignment title
+        const ext = assignment.attachment.fileType
+            ? '.' + assignment.attachment.fileType.replace(/^\./, '')
+            : ''
+        const safeName = (assignment.title || 'attachment').replace(/[^a-zA-Z0-9_\- ]/g, '').trim()
+        const filename = safeName + ext
 
-        protocol.get(fileUrl, (fileRes) => {
-            if (fileRes.statusCode !== 200) {
-                return res.status(502).json({ message: 'Failed to fetch file from storage' })
+        // Try fetching the stored Cloudinary URL (follows redirects)
+        try {
+            const fileRes = await followRedirects(fileUrl)
+
+            if (fileRes.statusCode === 200) {
+                const contentType = fileRes.headers['content-type'] || 'application/octet-stream'
+                res.setHeader('Content-Type', contentType)
+                res.setHeader(
+                    'Content-Disposition',
+                    action === 'download'
+                        ? `attachment; filename="${filename}"`
+                        : `inline; filename="${filename}"`
+                )
+                if (fileRes.headers['content-length']) {
+                    res.setHeader('Content-Length', fileRes.headers['content-length'])
+                }
+                return fileRes.pipe(res)
             }
 
-            // Determine filename from URL
-            const urlParts = fileUrl.split('/')
-            let filename = urlParts[urlParts.length - 1] || 'attachment'
-            // Clean version prefix (v12345678/)
-            filename = filename.split('?')[0]
+            // If the stored URL failed, try alternative Cloudinary URL formats
+            // Sometimes files uploaded as 'auto' end up as 'raw' type
+            if (publicId) {
+                const altUrl = fileUrl
+                    .replace('/image/upload/', '/raw/upload/')
+                    .replace('/video/upload/', '/raw/upload/')
 
-            const contentType = fileRes.headers['content-type'] || 'application/octet-stream'
-
-            res.setHeader('Content-Type', contentType)
-            if (action === 'download') {
-                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-            } else {
-                res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+                const altRes = await followRedirects(altUrl)
+                if (altRes.statusCode === 200) {
+                    const contentType = altRes.headers['content-type'] || 'application/octet-stream'
+                    res.setHeader('Content-Type', contentType)
+                    res.setHeader(
+                        'Content-Disposition',
+                        action === 'download'
+                            ? `attachment; filename="${filename}"`
+                            : `inline; filename="${filename}"`
+                    )
+                    if (altRes.headers['content-length']) {
+                        res.setHeader('Content-Length', altRes.headers['content-length'])
+                    }
+                    return altRes.pipe(res)
+                }
             }
-            if (fileRes.headers['content-length']) {
-                res.setHeader('Content-Length', fileRes.headers['content-length'])
-            }
 
-            fileRes.pipe(res)
-        }).on('error', (err) => {
-            console.error('File proxy error:', err.message)
-            res.status(502).json({ message: 'Failed to fetch file' })
-        })
+            return res.status(502).json({ message: 'Failed to fetch file from storage' })
+        } catch (fetchErr) {
+            console.error('File proxy fetch error:', fetchErr.message)
+            return res.status(502).json({ message: 'Failed to fetch file' })
+        }
     } catch (error) {
         next(error)
     }
