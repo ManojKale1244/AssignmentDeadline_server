@@ -23,7 +23,23 @@ const deleteAsset = async (publicId) => {
     return cloudinary.uploader.destroy(publicId)
 }
 
+/**
+ * Generate a signed/authenticated URL for a Cloudinary asset.
+ * Works for both image and raw resource types.
+ */
+const getSignedUrl = (publicId, options = {}) => {
+    const resourceType = options.resource_type || 'image'
+    return cloudinary.url(publicId, {
+        sign_url: true,
+        type: 'authenticated',
+        resource_type: resourceType,
+        ...options,
+    })
+}
+
 module.exports = {
+    cloudinary,
     uploadBuffer,
     deleteAsset,
+    getSignedUrl,
 }
