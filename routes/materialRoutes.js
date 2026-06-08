@@ -6,6 +6,7 @@ const {
     listMaterials,
     getMaterial,
     deleteMaterial,
+    downloadMaterialAttachment,
 } = require('../controllers/materialController')
 
 const router = express.Router()
@@ -16,6 +17,7 @@ const upload = multer({
 
 router.get('/', auth, listMaterials)
 router.get('/:id', auth, getMaterial)
+router.get('/:id/download', auth, downloadMaterialAttachment)
 router.post('/', auth, upload.single('file'), createMaterial)
 router.delete('/:id', auth, deleteMaterial)
 
