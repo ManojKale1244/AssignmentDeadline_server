@@ -1,6 +1,7 @@
 const express = require('express')
 const auth = require('../middleware/auth')
 const {
+    checkStudent,
     getStudentDashboard,
     getStudentSubjects,
     getSubjectMaterials,
@@ -15,6 +16,7 @@ const {
 const router = express.Router()
 
 router.use(auth)
+router.use(checkStudent)
 
 router.get('/dashboard', getStudentDashboard)
 router.get('/subjects', getStudentSubjects)

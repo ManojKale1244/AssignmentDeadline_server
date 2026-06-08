@@ -16,8 +16,6 @@ const checkStudent = (req, res, next) => {
 
 const getStudentDashboard = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -57,8 +55,6 @@ const getStudentDashboard = async (req, res, next) => {
 // Returns subjects for the student's own class+division
 const getStudentSubjects = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -75,8 +71,6 @@ const getStudentSubjects = async (req, res, next) => {
 // Returns all materials for one subject, enforcing class+division match
 const getSubjectMaterials = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -106,8 +100,6 @@ const getSubjectMaterials = async (req, res, next) => {
 
 const getStudentAssignments = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -129,8 +121,6 @@ const getStudentAssignments = async (req, res, next) => {
 
 const getStudentMaterials = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -153,8 +143,6 @@ const getStudentMaterials = async (req, res, next) => {
 
 const getStudentNotices = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -185,8 +173,6 @@ const getStudentNotices = async (req, res, next) => {
 
 const getStudentEssays = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -204,8 +190,6 @@ const getStudentEssays = async (req, res, next) => {
 
 const getCalendar = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const user = await User.findById(req.user.id)
         if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -254,8 +238,6 @@ const getCalendar = async (req, res, next) => {
 
 const searchContent = async (req, res, next) => {
     try {
-        checkStudent(req, res, next)
-
         const { q } = req.query
         if (!q) return res.status(400).json({ message: 'Search query required' })
 
@@ -290,6 +272,7 @@ const searchContent = async (req, res, next) => {
 }
 
 module.exports = {
+    checkStudent,
     getStudentDashboard,
     getStudentSubjects,
     getSubjectMaterials,
