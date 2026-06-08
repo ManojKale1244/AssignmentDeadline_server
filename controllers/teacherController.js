@@ -5,6 +5,7 @@ const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
 const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
 const { logActivity } = require('../utils/activityLog')
+const { notifyStudents } = require('../utils/notifyStudents')
 
 const checkTeacher = (req, res, next) => {
     if (req.user.role !== 'teacher') {
@@ -125,6 +126,17 @@ const createAssignment = async (req, res, next) => {
             await logActivity(req.user.id, 'create_assignment', 'Assignment', assignment._id)
             createdAssignments.push(assignment)
         }
+
+        // Notify students in the target class+division(s)
+        await notifyStudents({
+            title: 'New Assignment Posted',
+            message: `"${title}" has been assigned. Deadline: ${new Date(deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+            type: 'assignment',
+            relatedId: createdAssignments[0]._id,
+            relatedModel: 'Assignment',
+            classes: [targetClass || subject.class],
+            divisions: divisionsToCreate,
+        })
 
         res.status(201).json({ assignment: createdAssignments[0], created: createdAssignments })
     } catch (error) {
@@ -280,6 +292,17 @@ const uploadMaterial = async (req, res, next) => {
             createdMaterials.push(material)
         }
 
+        // Notify students in the target class+division(s)
+        await notifyStudents({
+            title: 'New Study Material Uploaded',
+            message: `"${title}" (${category.replace('_', ' ')}) has been uploaded for ${subject.name || 'your subject'}.`,
+            type: 'material',
+            relatedId: createdMaterials[0]._id,
+            relatedModel: 'Material',
+            classes: [targetClass || subject.class],
+            divisions: divisionsToCreate,
+        })
+
         res.status(201).json({ material: createdMaterials[0], created: createdMaterials })
     } catch (error) {
         next(error)
@@ -347,6 +370,20 @@ const createNotice = async (req, res, next) => {
         })
 
         await logActivity(req.user.id, 'create_notice', 'Notice', notice._id)
+
+        // Notify students — notices may target specific classes/divisions or all
+        const noticeClasses = Array.isArray(targetClass) ? targetClass : (targetClass ? [targetClass] : [])
+        const noticeDivisions = Array.isArray(targetDivision) ? targetDivision : (targetDivision ? [targetDivision] : [])
+        await notifyStudents({
+            title: 'New Notice',
+            message: `${title}${description ? ': ' + description.slice(0, 100) : ''}`,
+            type: 'notice',
+            relatedId: notice._id,
+            relatedModel: 'Notice',
+            classes: noticeClasses,
+            divisions: noticeDivisions,
+        })
+
         res.status(201).json({ notice })
     } catch (error) {
         next(error)
