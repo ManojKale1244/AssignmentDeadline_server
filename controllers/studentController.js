@@ -271,6 +271,66 @@ const searchContent = async (req, res, next) => {
     }
 }
 
+// ─── ASSIGNMENT ATTACHMENT PROXY ──────────────────────────────────────────────
+
+const getAssignmentAttachment = async (req, res, next) => {
+    try {
+        const user = await User.findById(req.user.id)
+        if (!user) return res.status(404).json({ message: 'User not found' })
+
+        const assignment = await Assignment.findById(req.params.id)
+        if (!assignment) return res.status(404).json({ message: 'Assignment not found' })
+
+        // Enforce class+division access
+        if (assignment.class !== user.class || assignment.division !== user.division) {
+            return res.status(403).json({ message: 'Access denied' })
+        }
+
+        if (!assignment.attachment?.url) {
+            return res.status(404).json({ message: 'No attachment found' })
+        }
+
+        const fileUrl = assignment.attachment.url
+        const action = req.query.action || 'download' // 'view' or 'download'
+
+        // Fetch the file from Cloudinary using the server (bypasses browser 401)
+        const https = require('https')
+        const http = require('http')
+        const protocol = fileUrl.startsWith('https') ? https : http
+
+        protocol.get(fileUrl, (fileRes) => {
+            if (fileRes.statusCode !== 200) {
+                return res.status(502).json({ message: 'Failed to fetch file from storage' })
+            }
+
+            // Determine filename from URL
+            const urlParts = fileUrl.split('/')
+            let filename = urlParts[urlParts.length - 1] || 'attachment'
+            // Clean version prefix (v12345678/)
+            filename = filename.split('?')[0]
+
+            const contentType = fileRes.headers['content-type'] || 'application/octet-stream'
+
+            res.setHeader('Content-Type', contentType)
+            if (action === 'download') {
+                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+            } else {
+                res.setHeader('Content-Disposition', `inline; filename="${filename}"`)
+            }
+            if (fileRes.headers['content-length']) {
+                res.setHeader('Content-Length', fileRes.headers['content-length'])
+            }
+
+            fileRes.pipe(res)
+        }).on('error', (err) => {
+            console.error('File proxy error:', err.message)
+            res.status(502).json({ message: 'Failed to fetch file' })
+        })
+    } catch (error) {
+        next(error)
+    }
+}
+
 module.exports = {
     checkStudent,
     getStudentDashboard,
@@ -282,4 +342,5 @@ module.exports = {
     getStudentEssays,
     getCalendar,
     searchContent,
+    getAssignmentAttachment,
 }

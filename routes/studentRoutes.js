@@ -11,6 +11,7 @@ const {
     getStudentEssays,
     getCalendar,
     searchContent,
+    getAssignmentAttachment,
 } = require('../controllers/studentController')
 
 const router = express.Router()
@@ -22,6 +23,7 @@ router.get('/dashboard', getStudentDashboard)
 router.get('/subjects', getStudentSubjects)
 router.get('/subjects/:id/materials', getSubjectMaterials)
 router.get('/assignments', getStudentAssignments)
+router.get('/assignments/:id/attachment', getAssignmentAttachment)
 router.get('/materials', getStudentMaterials)
 router.get('/notices', getStudentNotices)
 router.get('/essays', getStudentEssays)
