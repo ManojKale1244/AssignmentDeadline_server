@@ -3,6 +3,7 @@ const Material = require('../models/Material')
 const Notice = require('../models/Notice')
 const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
+const User = require('../models/User')
 const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
 const { logActivity } = require('../utils/activityLog')
 const { notifyStudents } = require('../utils/notifyStudents')
@@ -41,6 +42,18 @@ const getTeacherDashboard = async (req, res, next) => {
         const tomorrow = new Date(today)
         tomorrow.setDate(tomorrow.getDate() + 1)
 
+        // Find all subjects assigned to this teacher to get class & division targets
+        const subjects = await Subject.find({ teacherId: req.user.id })
+        const classDivs = subjects.map((s) => ({ class: s.class, division: s.division }))
+
+        let totalStudents = 0
+        if (classDivs.length > 0) {
+            totalStudents = await User.countDocuments({
+                role: 'student',
+                $or: classDivs,
+            })
+        }
+
         const [todayDeadlines, upcomingDeadlines, totalAssignments, totalMaterials, totalNotices, mySubjects] =
             await Promise.all([
                 Assignment.countDocuments({ createdBy: req.user.id, deadline: { $gte: today, $lt: tomorrow } }),
@@ -59,6 +72,7 @@ const getTeacherDashboard = async (req, res, next) => {
                 totalMaterials,
                 totalNotices,
                 mySubjects,
+                totalStudents,
             },
         })
     } catch (error) {
