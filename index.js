@@ -1,4 +1,4 @@
-require('dotenv').config() // Reload trigger comment
+require('dotenv').config() // Reload trigger comment - updated credentials
 
 const express = require('express')
 const cors = require('cors')

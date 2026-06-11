@@ -7,6 +7,7 @@ const User = require('../models/User')
 const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
 const { logActivity } = require('../utils/activityLog')
 const { notifyStudents } = require('../utils/notifyStudents')
+const { queueRemindersForAssignment, deleteRemindersForAssignment, requeueRemindersForAssignment } = require('../utils/reminders')
 
 const checkTeacher = (req, res, next) => {
     if (req.user.role !== 'teacher') {
@@ -152,6 +153,11 @@ const createAssignment = async (req, res, next) => {
             divisions: divisionsToCreate,
         })
 
+        // Queue automatic email reminders (7d, 3d, 1d, 6h) for ALL students
+        for (const assignment of createdAssignments) {
+            await queueRemindersForAssignment(assignment)
+        }
+
         res.status(201).json({ assignment: createdAssignments[0], created: createdAssignments })
     } catch (error) {
         next(error)
@@ -206,6 +212,11 @@ const updateAssignment = async (req, res, next) => {
 
         await assignment.save()
         await logActivity(req.user.id, 'update_assignment', 'Assignment', assignment._id)
+
+        // If deadline was changed, re-queue reminders for all students
+        if (deadline !== undefined) {
+            await requeueRemindersForAssignment(assignment)
+        }
         
         const updatedAssignment = await Assignment.findById(assignment._id).populate('subjectId', 'name code class division')
         res.json({ assignment: updatedAssignment })
@@ -226,6 +237,9 @@ const deleteAssignment = async (req, res, next) => {
         if (assignment.attachment?.publicId) {
             await deleteAsset(assignment.attachment.publicId)
         }
+
+        // Clean up pending reminders for this assignment
+        await deleteRemindersForAssignment(id)
 
         await Assignment.findByIdAndDelete(id)
         await logActivity(req.user.id, 'delete_assignment', 'Assignment', id)
