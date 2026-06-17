@@ -14,9 +14,8 @@ const {
     getActivityLogs,
     listUsers,
     seedDefaultSubjects,
-    adminDeleteSubject,
-    adminUpdateSubject,
 } = require('../controllers/adminController')
+const { updateSubject, deleteSubject } = require('../controllers/subjectController')
 
 const router = express.Router()
 
@@ -30,8 +29,8 @@ router.post('/teachers', createTeacher)
 router.post('/students', createStudent)
 router.post('/subjects', createSubject)
 router.post('/subjects/seed', seedDefaultSubjects)
-router.put('/subjects/:id', adminUpdateSubject)
-router.delete('/subjects/:id', adminDeleteSubject)
+router.put('/subjects/:id', updateSubject)
+router.delete('/subjects/:id', deleteSubject)
 router.post('/assign-subject', assignSubjectToTeacher)
 router.get('/stats', getStats)
 router.get('/activities', getActivityLogs)

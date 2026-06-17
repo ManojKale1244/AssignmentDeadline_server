@@ -3,7 +3,7 @@ const Material = require('../models/Material')
 const Notice = require('../models/Notice')
 const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
-const User = require('../models/User')
+const { proxyCloudinaryFile, buildFilename } = require('../utils/fileProxy')
 
 const checkStudent = (req, res, next) => {
     if (req.user.role !== 'student') {
@@ -16,8 +16,7 @@ const checkStudent = (req, res, next) => {
 
 const getStudentDashboard = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const today = new Date()
         today.setHours(0, 0, 0, 0)
@@ -55,8 +54,7 @@ const getStudentDashboard = async (req, res, next) => {
 // Returns subjects for the student's own class+division
 const getStudentSubjects = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const subjects = await Subject.find({ class: user.class, division: user.division })
             .populate('teacherId', 'name')
@@ -71,8 +69,7 @@ const getStudentSubjects = async (req, res, next) => {
 // Returns all materials for one subject, enforcing class+division match
 const getSubjectMaterials = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const subject = await Subject.findById(req.params.id)
         if (!subject) return res.status(404).json({ message: 'Subject not found' })
@@ -100,8 +97,7 @@ const getSubjectMaterials = async (req, res, next) => {
 
 const getStudentAssignments = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const { subjectId } = req.query
         const filter = { class: user.class, division: user.division }
@@ -121,8 +117,7 @@ const getStudentAssignments = async (req, res, next) => {
 
 const getStudentMaterials = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const { subjectId, category } = req.query
         const filter = { class: user.class, division: user.division }
@@ -143,8 +138,7 @@ const getStudentMaterials = async (req, res, next) => {
 
 const getStudentNotices = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const notices = await Notice.find({
             $or: [
@@ -173,8 +167,7 @@ const getStudentNotices = async (req, res, next) => {
 
 const getStudentEssays = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const essays = await Essay.find({ class: user.class, division: user.division })
             .populate('subjectId', 'name code')
@@ -190,8 +183,7 @@ const getStudentEssays = async (req, res, next) => {
 
 const getCalendar = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const { month, year } = req.query
         const now = new Date()
@@ -241,11 +233,11 @@ const searchContent = async (req, res, next) => {
         const { q } = req.query
         if (!q) return res.status(400).json({ message: 'Search query required' })
 
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const classFilter = { class: user.class, division: user.division }
-        const searchRegex = new RegExp(q, 'i')
+        const escaped = String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const searchRegex = new RegExp(escaped, 'i')
 
         const [assignments, materials, essays] = await Promise.all([
             Assignment.find({
@@ -273,32 +265,9 @@ const searchContent = async (req, res, next) => {
 
 // ─── ASSIGNMENT ATTACHMENT PROXY ──────────────────────────────────────────────
 
-/**
- * Follow redirects for http/https.get (Node built-in doesn't follow them)
- */
-const followRedirects = (url, maxRedirects = 5) => {
-    return new Promise((resolve, reject) => {
-        const https = require('https')
-        const http = require('http')
-        const protocol = url.startsWith('https') ? https : http
-
-        protocol.get(url, (response) => {
-            if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
-                if (maxRedirects <= 0) return reject(new Error('Too many redirects'))
-                const redirectUrl = response.headers.location.startsWith('http')
-                    ? response.headers.location
-                    : new URL(response.headers.location, url).href
-                return resolve(followRedirects(redirectUrl, maxRedirects - 1))
-            }
-            resolve(response)
-        }).on('error', reject)
-    })
-}
-
 const getAssignmentAttachment = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id)
-        if (!user) return res.status(404).json({ message: 'User not found' })
+        const user = req.fullUser
 
         const assignment = await Assignment.findById(req.params.id)
         if (!assignment) return res.status(404).json({ message: 'Assignment not found' })
@@ -312,77 +281,12 @@ const getAssignmentAttachment = async (req, res, next) => {
             return res.status(404).json({ message: 'No attachment found' })
         }
 
-        const fileUrl = assignment.attachment.url
-        const publicId = assignment.attachment.publicId
-        const action = req.query.action || 'download'
-
-        // Build filename from assignment title
-        const ext = assignment.attachment.fileType
-            ? '.' + assignment.attachment.fileType.replace(/^\./, '')
-            : ''
-        const safeName = (assignment.title || 'attachment').replace(/[^a-zA-Z0-9_\- ]/g, '').trim()
-        const filename = safeName + ext
-
-        // Try fetching the stored Cloudinary URL (follows redirects)
-        try {
-            const fileRes = await followRedirects(fileUrl)
-
-            if (fileRes.statusCode === 200) {
-                const contentType = fileRes.headers['content-type'] || 'application/octet-stream'
-                res.setHeader('Content-Type', contentType)
-                res.setHeader(
-                    'Content-Disposition',
-                    action === 'download'
-                        ? `attachment; filename="${filename}"`
-                        : `inline; filename="${filename}"`
-                )
-                if (fileRes.headers['content-length']) {
-                    res.setHeader('Content-Length', fileRes.headers['content-length'])
-                }
-                return fileRes.pipe(res)
-            }
-
-            if (fileRes.statusCode === 401 || fileRes.headers['x-cld-error'] === 'deny or ACL failure') {
-                return res.status(401).json({
-                    message: 'PDF/ZIP delivery is restricted on your Cloudinary account. Please go to your Cloudinary Console > Settings > Security > Restricted media types, and ensure "Allow delivery of PDF and ZIP files" is enabled.'
-                })
-            }
-
-            // If the stored URL failed, try alternative Cloudinary URL formats
-            // Sometimes files uploaded as 'auto' end up as 'raw' type
-            if (publicId) {
-                const altUrl = fileUrl
-                    .replace('/image/upload/', '/raw/upload/')
-                    .replace('/video/upload/', '/raw/upload/')
-
-                const altRes = await followRedirects(altUrl)
-                if (altRes.statusCode === 200) {
-                    const contentType = altRes.headers['content-type'] || 'application/octet-stream'
-                    res.setHeader('Content-Type', contentType)
-                    res.setHeader(
-                        'Content-Disposition',
-                        action === 'download'
-                            ? `attachment; filename="${filename}"`
-                            : `inline; filename="${filename}"`
-                    )
-                    if (altRes.headers['content-length']) {
-                        res.setHeader('Content-Length', altRes.headers['content-length'])
-                    }
-                    return altRes.pipe(res)
-                }
-
-                if (altRes.statusCode === 401 || altRes.headers['x-cld-error'] === 'deny or ACL failure') {
-                    return res.status(401).json({
-                        message: 'PDF/ZIP delivery is restricted on your Cloudinary account. Please go to your Cloudinary Console > Settings > Security > Restricted media types, and ensure "Allow delivery of PDF and ZIP files" is enabled.'
-                    })
-                }
-            }
-
-            return res.status(502).json({ message: 'Failed to fetch file from storage' })
-        } catch (fetchErr) {
-            console.error('File proxy fetch error:', fetchErr.message)
-            return res.status(502).json({ message: 'Failed to fetch file' })
-        }
+        await proxyCloudinaryFile({
+            fileUrl: assignment.attachment.url,
+            publicId: assignment.attachment.publicId,
+            filename: buildFilename(assignment.title, assignment.attachment.fileType),
+            action: req.query.action || 'download',
+        }, res)
     } catch (error) {
         next(error)
     }

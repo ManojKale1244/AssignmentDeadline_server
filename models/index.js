@@ -5,6 +5,7 @@ module.exports = {
     Assignment: require('./Assignment'),
     Material: require('./Material'),
     Notice: require('./Notice'),
+    Notification: require('./Notification'),
     Essay: require('./Essay'),
     Reminder: require('./Reminder'),
     ActivityLog: require('./ActivityLog'),

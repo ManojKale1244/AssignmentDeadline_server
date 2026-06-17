@@ -44,4 +44,6 @@ const UserSchema = new mongoose.Schema(
     { timestamps: true }
 )
 
+UserSchema.index({ role: 1, class: 1, division: 1, isActive: 1 })
+
 module.exports = mongoose.model('User', UserSchema)
