@@ -74,6 +74,7 @@ app.use('/api/notifications', require('./routes/notificationRoutes'))
 app.use('/api/admin', require('./routes/adminRoutes'))
 app.use('/api/teacher', require('./routes/teacherRoutes'))
 app.use('/api/student', require('./routes/studentRoutes'))
+app.use('/api/search', require('./routes/searchRoutes'))
 
 app.use(errorHandler)
 
