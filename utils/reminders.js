@@ -206,10 +206,10 @@ const startReminderScheduler = () => {
         return
     }
 
-    console.log('🔔 Reminder scheduler started — checking every minute for due reminders')
+    console.log('🔔 Reminder scheduler started — checking every 5 minutes for due reminders')
 
-    // Run every minute
-    cron.schedule('*/1 * * * *', async () => {
+    // Run every 5 minutes
+    cron.schedule('*/5 * * * *', async () => {
         try {
             const dueReminders = await Reminder.find({
                 sent: false,

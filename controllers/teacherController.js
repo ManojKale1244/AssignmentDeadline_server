@@ -55,15 +55,16 @@ const getTeacherDashboard = async (req, res, next) => {
             })
         }
 
-        const [todayDeadlines, upcomingDeadlines, totalAssignments, totalMaterials, totalNotices, mySubjects] =
+        const [todayDeadlines, upcomingDeadlines, totalAssignments, totalMaterials, totalNotices] =
             await Promise.all([
                 Assignment.countDocuments({ createdBy: req.user.id, deadline: { $gte: today, $lt: tomorrow } }),
                 Assignment.countDocuments({ createdBy: req.user.id, deadline: { $gte: tomorrow } }),
                 Assignment.countDocuments({ createdBy: req.user.id }),
                 Material.countDocuments({ uploadedBy: req.user.id }),
                 Notice.countDocuments({ createdBy: req.user.id }),
-                Subject.countDocuments({ teacherId: req.user.id }),
             ])
+
+        const mySubjects = subjects.length
 
         res.json({
             stats: {

@@ -62,7 +62,8 @@ const listAssignments = async (req, res, next) => {
         if (assignmentClass) query.class = assignmentClass
         if (division) query.division = division
         if (q) {
-            const regex = new RegExp(String(q), 'i')
+            const escaped = String(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            const regex = new RegExp(escaped, 'i')
             query.$or = [{ title: regex }, { description: regex }]
         }
 

@@ -44,4 +44,8 @@ const AssignmentSchema = new mongoose.Schema(
     { timestamps: true }
 )
 
+AssignmentSchema.index({ class: 1, division: 1, deadline: 1 })
+AssignmentSchema.index({ createdBy: 1, deadline: -1 })
+AssignmentSchema.index({ subjectId: 1, deadline: -1 })
+
 module.exports = mongoose.model('Assignment', AssignmentSchema)

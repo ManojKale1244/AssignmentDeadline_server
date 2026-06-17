@@ -39,4 +39,8 @@ const MaterialSchema = new mongoose.Schema(
     { timestamps: true }
 )
 
+MaterialSchema.index({ class: 1, division: 1, createdAt: -1 })
+MaterialSchema.index({ uploadedBy: 1, createdAt: -1 })
+MaterialSchema.index({ subjectId: 1, createdAt: -1 })
+
 module.exports = mongoose.model('Material', MaterialSchema)

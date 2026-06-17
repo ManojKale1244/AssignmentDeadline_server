@@ -16,4 +16,7 @@ const NoticeSchema = new mongoose.Schema(
     { timestamps: true }
 )
 
+NoticeSchema.index({ createdBy: 1, createdAt: -1 })
+NoticeSchema.index({ targetClass: 1, createdAt: -1 })
+
 module.exports = mongoose.model('Notice', NoticeSchema)

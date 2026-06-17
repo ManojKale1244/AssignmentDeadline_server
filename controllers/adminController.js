@@ -29,7 +29,7 @@ const createDepartment = async (req, res, next) => {
             return res.status(409).json({ message: 'Department already exists' })
         }
 
-        const department = await Department.create({ name })
+        const department = await Department.create({ name, createdBy: req.user.id })
         await logActivity(req.user.id, 'create_department', 'Department', department._id)
 
         res.status(201).json({ department })
@@ -358,41 +358,6 @@ const seedDefaultSubjects = async (req, res, next) => {
     }
 }
 
-const adminDeleteSubject = async (req, res, next) => {
-    try {
-        const subject = await Subject.findById(req.params.id)
-        if (!subject) {
-            return res.status(404).json({ message: 'Subject not found' })
-        }
-        await subject.deleteOne()
-        await logActivity(req.user.id, 'delete_subject', 'Subject', subject._id)
-        res.json({ message: 'Subject deleted' })
-    } catch (error) {
-        next(error)
-    }
-}
-
-const adminUpdateSubject = async (req, res, next) => {
-    try {
-        const subject = await Subject.findById(req.params.id)
-        if (!subject) {
-            return res.status(404).json({ message: 'Subject not found' })
-        }
-        const { name, code, teacherId, class: userClass, division, department } = req.body
-        if (name !== undefined) subject.name = name
-        if (code !== undefined) subject.code = code
-        if (teacherId !== undefined) subject.teacherId = teacherId
-        if (userClass !== undefined) subject.class = userClass
-        if (division !== undefined) subject.division = division
-        if (department !== undefined) subject.department = department
-        await subject.save()
-        await logActivity(req.user.id, 'update_subject', 'Subject', subject._id)
-        res.json({ subject })
-    } catch (error) {
-        next(error)
-    }
-}
-
 module.exports = {
     checkAdmin,
     createDepartment,
@@ -407,6 +372,5 @@ module.exports = {
     getActivityLogs,
     listUsers,
     seedDefaultSubjects,
-    adminDeleteSubject,
-    adminUpdateSubject,
 }
+
