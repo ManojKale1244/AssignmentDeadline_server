@@ -34,7 +34,7 @@ const UserSchema = new mongoose.Schema(
         },
         division: {
             type: String,
-            enum: ['A', 'B'],
+            enum: ['A', 'B', 'C'],
         },
         department: { type: String, default: '' },
         profilePic: { type: String, default: '' },
