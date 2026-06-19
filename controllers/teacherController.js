@@ -117,7 +117,8 @@ const createAssignment = async (req, res, next) => {
             }
         }
 
-        const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
+        const allDivisions = (targetClass || subject.class) === 'SY' ? ['A', 'B', 'C'] : ['A', 'B']
+        const divisionsToCreate = targetDivision === 'both' ? allDivisions : [targetDivision || subject.division]
         const createdAssignments = []
 
         for (const div of divisionsToCreate) {
@@ -295,7 +296,8 @@ const uploadMaterial = async (req, res, next) => {
             resource_type: 'auto',
         })
 
-        const divisionsToCreate = targetDivision === 'both' ? ['A', 'B'] : [targetDivision || subject.division]
+        const allDivisions = (targetClass || subject.class) === 'SY' ? ['A', 'B', 'C'] : ['A', 'B']
+        const divisionsToCreate = targetDivision === 'both' ? allDivisions : [targetDivision || subject.division]
         const createdMaterials = []
 
         for (const div of divisionsToCreate) {

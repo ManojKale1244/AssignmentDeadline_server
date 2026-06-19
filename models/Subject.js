@@ -12,7 +12,7 @@ const SubjectSchema = new mongoose.Schema(
         },
         division: {
             type: String,
-            enum: ['A', 'B'],
+            enum: ['A', 'B', 'C'],
             required: true,
         },
         department: { type: String, required: true, trim: true },

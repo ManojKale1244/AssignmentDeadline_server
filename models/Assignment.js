@@ -33,7 +33,7 @@ const AssignmentSchema = new mongoose.Schema(
         },
         division: {
             type: String,
-            enum: ['A', 'B'],
+            enum: ['A', 'B', 'C'],
             required: true,
         },
         deadline: { type: Date, required: true },
