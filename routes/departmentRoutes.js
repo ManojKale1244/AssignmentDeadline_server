@@ -4,6 +4,9 @@ const { createDepartment, listDepartments } = require('../controllers/department
 
 const router = express.Router()
 
+// Public route — used by the registration page (no token needed)
+router.get('/public', listDepartments)
+
 router.get('/', auth, listDepartments)
 router.post('/', auth, createDepartment)
 
