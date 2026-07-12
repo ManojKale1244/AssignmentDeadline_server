@@ -29,6 +29,12 @@ const register = async (req, res, next) => {
             return res.status(400).json({ message: 'Password must be at least 6 characters' })
         }
 
+        // Only allow SVERI COEP student email IDs for student registration
+        const effectiveRole = role || 'student'
+        if (effectiveRole === 'student' && !email.endsWith('@coep.sveri.ac.in')) {
+            return res.status(400).json({ message: 'Only SVERI COEP student email IDs are allowed.' })
+        }
+
         const existing = await User.findOne({ email })
         if (existing) {
             return res.status(409).json({ message: 'Email already registered' })
