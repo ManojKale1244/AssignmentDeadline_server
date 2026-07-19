@@ -8,6 +8,7 @@ const Notice = require('../models/Notice')
 const ActivityLog = require('../models/ActivityLog')
 const { logActivity } = require('../utils/activityLog')
 const { DEFAULT_SUBJECTS } = require('../utils/subjectDefaults')
+const { sendEmail, buildWelcomeEmail } = require('../utils/email')
 
 const checkAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
@@ -76,6 +77,25 @@ const createTeacher = async (req, res, next) => {
 
         await logActivity(req.user.id, 'create_teacher', 'User', teacher._id)
 
+        // Send welcome email asynchronously (non-blocking)
+        const portalUrl = process.env.CLIENT_URL?.split(',')[0] || 'http://localhost:5173'
+        const welcomeEmail = buildWelcomeEmail({
+            userName: teacher.name,
+            userEmail: teacher.email,
+            role: teacher.role,
+            portalUrl,
+        })
+        sendEmail({
+            to: teacher.email,
+            subject: welcomeEmail.subject,
+            html: welcomeEmail.html,
+            text: welcomeEmail.text,
+        }).then(() => {
+            console.log(`✅ Welcome email sent to ${teacher.email}`)
+        }).catch((err) => {
+            console.error(`❌ Failed to send welcome email to ${teacher.email}:`, err.message)
+        })
+
         res.status(201).json({ teacher })
     } catch (error) {
         next(error)
@@ -107,6 +127,25 @@ const createStudent = async (req, res, next) => {
         })
 
         await logActivity(req.user.id, 'create_student', 'User', student._id)
+
+        // Send welcome email asynchronously (non-blocking)
+        const portalUrl = process.env.CLIENT_URL?.split(',')[0] || 'http://localhost:5173'
+        const welcomeEmail = buildWelcomeEmail({
+            userName: student.name,
+            userEmail: student.email,
+            role: student.role,
+            portalUrl,
+        })
+        sendEmail({
+            to: student.email,
+            subject: welcomeEmail.subject,
+            html: welcomeEmail.html,
+            text: welcomeEmail.text,
+        }).then(() => {
+            console.log(`✅ Welcome email sent to ${student.email}`)
+        }).catch((err) => {
+            console.error(`❌ Failed to send welcome email to ${student.email}:`, err.message)
+        })
 
         res.status(201).json({ student })
     } catch (error) {
