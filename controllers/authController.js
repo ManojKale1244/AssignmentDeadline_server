@@ -100,14 +100,14 @@ const me = async (req, res, next) => {
 
 const updateProfile = async (req, res, next) => {
     try {
-        const { department, class: userClass, division, profilePic } = req.body
+        const { class: userClass, division, profilePic } = req.body
 
         const user = await User.findById(req.user.id)
         if (!user) {
             return res.status(404).json({ message: 'User not found' })
         }
 
-        if (department !== undefined) user.department = department
+        // Department is admin-managed only — not editable via profile
         if (userClass !== undefined) user.class = userClass
         if (division !== undefined) user.division = division
         if (profilePic !== undefined) user.profilePic = profilePic
