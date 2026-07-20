@@ -1,19 +1,44 @@
 const nodemailer = require('nodemailer')
 
+// Strip invisible/non-ASCII characters and trim whitespace from env values
+const cleanEnv = (key) => {
+    const val = process.env[key]
+    if (!val) return ''
+    // Remove any non-printable-ASCII characters (zero-width spaces, BOM, etc.)
+    return val.replace(/[^\x20-\x7E]/g, '').trim()
+}
+
+let _loggedConfig = false
+
 const getTransporter = () => {
-    if (!process.env.SMTP_HOST) {
+    const host = cleanEnv('SMTP_HOST')
+    if (!host) {
         return null
     }
 
+    const port = Number(cleanEnv('SMTP_PORT') || '587')
+    const secure = cleanEnv('SMTP_SECURE') === 'true'
+    const user = cleanEnv('SMTP_USER')
+    const pass = cleanEnv('SMTP_PASS')
+
+    // Log SMTP config once on first use (hide password)
+    if (!_loggedConfig) {
+        console.log('📧 SMTP Config:', {
+            host,
+            port,
+            secure,
+            user: user || '(not set)',
+            passLength: pass ? pass.length : 0,
+        })
+        _loggedConfig = true
+    }
+
     return nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: process.env.SMTP_USER
-            ? {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-            }
+        host,
+        port,
+        secure,
+        auth: user
+            ? { user, pass }
             : undefined,
     })
 }
@@ -25,7 +50,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
         return { skipped: true }
     }
 
-    const from = process.env.SMTP_FROM || 'EduTrack <no-reply@edutrack.local>'
+    const from = cleanEnv('SMTP_FROM') || 'EduTrack <no-reply@edutrack.local>'
 
     return transporter.sendMail({
         from,
