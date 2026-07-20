@@ -1,142 +1,99 @@
-const nodemailer = require('nodemailer')
+const https = require('https')
 
 // Strip invisible/non-ASCII characters and trim whitespace from env values
 const cleanEnv = (key) => {
     const val = process.env[key]
     if (!val) return ''
-    // Remove any non-printable-ASCII characters (zero-width spaces, BOM, etc.)
     return val.replace(/[^\x20-\x7E]/g, '').trim()
 }
 
 let _loggedConfig = false
-let _transporter = null       // Cached singleton
-let _smtpVerified = null      // null = not checked, true = works, false = unreachable
-let _lastVerifyAttempt = 0    // Timestamp of last verify attempt
-const VERIFY_RETRY_MS = 10 * 60 * 1000 // Re-check SMTP every 10 minutes if it was down
 
-const getTransporter = () => {
-    // Return cached transporter if already created
-    if (_transporter) return _transporter
-
-    const host = cleanEnv('SMTP_HOST')
-    if (!host) {
-        return null
+/**
+ * Send an email via Brevo (Sendinblue) Transactional HTTP API.
+ * Uses Node's built-in `https` module — no extra dependencies needed.
+ *
+ * Requires env var: BREVO_API_KEY
+ * Optional env var: BREVO_SENDER_EMAIL (defaults to edutrack.connect@gmail.com)
+ * Optional env var: BREVO_SENDER_NAME  (defaults to EduTrack)
+ */
+const sendEmail = async ({ to, subject, html, text }) => {
+    const apiKey = cleanEnv('BREVO_API_KEY')
+    if (!apiKey) {
+        console.warn('⚠️  BREVO_API_KEY not configured. Skipping email to:', to)
+        return { skipped: true }
     }
 
-    const port = Number(cleanEnv('SMTP_PORT') || '587')
-    const secure = cleanEnv('SMTP_SECURE') === 'true'
-    const user = cleanEnv('SMTP_USER')
-    const pass = cleanEnv('SMTP_PASS')
+    const senderEmail = cleanEnv('BREVO_SENDER_EMAIL') || 'edutrack.connect@gmail.com'
+    const senderName = cleanEnv('BREVO_SENDER_NAME') || 'EduTrack'
 
-    // Log SMTP config once on first use (hide password)
+    // Log config once
     if (!_loggedConfig) {
-        console.log('📧 SMTP Config:', {
-            host,
-            port,
-            secure,
-            user: user || '(not set)',
-            passLength: pass ? pass.length : 0,
+        console.log('📧 Brevo HTTP API configured:', {
+            sender: `${senderName} <${senderEmail}>`,
+            apiKeyLength: apiKey.length,
         })
         _loggedConfig = true
     }
 
-    // Use Gmail service shorthand for better compatibility,
-    // fall back to manual host/port for non-Gmail servers
-    const isGmail = host.includes('gmail')
+    // Normalise `to` — accept a string or an array of strings
+    const recipients = Array.isArray(to) ? to : [to]
+    const toList = recipients.map((email) => ({ email: email.trim() }))
 
-    const transportConfig = {
-        ...(isGmail
-            ? { service: 'gmail' }
-            : { host, port, secure }),
-        auth: user
-            ? { user, pass }
-            : undefined,
-        // Connection pool for better throughput
-        pool: true,
-        maxConnections: 3,
-        maxMessages: 50,
-        // Tight timeouts so failures are fast (default is 5+ minutes)
-        connectionTimeout: 10000,   // 10s to establish TCP connection
-        greetingTimeout: 10000,     // 10s for SMTP greeting
-        socketTimeout: 15000,       // 15s for socket inactivity
-        // Retry connection on transient failures
-        tls: {
-            rejectUnauthorized: false,  // Accept self-signed certs (some hosts need this)
-        },
-    }
+    const payload = JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: toList,
+        subject,
+        htmlContent: html || undefined,
+        textContent: text || undefined,
+    })
 
-    _transporter = nodemailer.createTransport(transportConfig)
-    return _transporter
-}
-
-/**
- * Verify SMTP connection is reachable.
- * Caches result and retries periodically if it was down.
- */
-const isSmtpReachable = async () => {
-    // If verified and working, skip re-check
-    if (_smtpVerified === true) return true
-
-    // If recently failed, don't spam retry — wait before re-checking
-    const now = Date.now()
-    if (_smtpVerified === false && (now - _lastVerifyAttempt) < VERIFY_RETRY_MS) {
-        return false
-    }
-
-    const transporter = getTransporter()
-    if (!transporter) return false
-
-    _lastVerifyAttempt = now
-    try {
-        await transporter.verify()
-        _smtpVerified = true
-        console.log('✅ SMTP connection verified successfully')
-        return true
-    } catch (err) {
-        _smtpVerified = false
-        console.warn(`⚠️  SMTP unreachable (${err.message}). Emails will be skipped until connection is restored. Will retry in ${VERIFY_RETRY_MS / 60000} min.`)
-        return false
-    }
-}
-
-const sendEmail = async ({ to, subject, html, text }) => {
-    const transporter = getTransporter()
-    if (!transporter) {
-        console.warn('⚠️  SMTP not configured. Skipping email to:', to)
-        return { skipped: true }
-    }
-
-    // Check if SMTP is reachable (cached, won't spam retries)
-    const reachable = await isSmtpReachable()
-    if (!reachable) {
-        console.warn(`⚠️  SMTP unreachable. Skipping email to: ${to}`)
-        return { skipped: true, reason: 'smtp_unreachable' }
-    }
-
-    const from = cleanEnv('SMTP_FROM') || 'EduTrack <no-reply@edutrack.local>'
-
-    try {
-        const result = await transporter.sendMail({
-            from,
-            replyTo: from,
-            to,
-            subject,
-            html,
-            text,
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: 'api.brevo.com',
+            port: 443,
+            path: '/v3/smtp/email',
+            method: 'POST',
             headers: {
-                'X-Priority': '3'
-            }
-        })
-        return result
-    } catch (err) {
-        // If sending fails with a connection error, mark SMTP as down
-        if (err.code === 'ESOCKET' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
-            _smtpVerified = false
-            _lastVerifyAttempt = Date.now()
-            console.warn(`⚠️  SMTP connection failed (${err.code || err.message}). Marking as unreachable for ${VERIFY_RETRY_MS / 60000} min.`)
+                'accept': 'application/json',
+                'api-key': apiKey,
+                'content-type': 'application/json',
+                'content-length': Buffer.byteLength(payload),
+            },
         }
-        throw err
-    }
+
+        const req = https.request(options, (res) => {
+            let data = ''
+            res.on('data', (chunk) => { data += chunk })
+            res.on('end', () => {
+                try {
+                    const body = JSON.parse(data)
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        console.log(`✅ Email sent via Brevo to: ${recipients.join(', ')} (messageId: ${body.messageId || 'n/a'})`)
+                        resolve(body)
+                    } else {
+                        console.error(`❌ Brevo API error (${res.statusCode}):`, body)
+                        reject(new Error(`Brevo API ${res.statusCode}: ${body.message || JSON.stringify(body)}`))
+                    }
+                } catch (parseErr) {
+                    console.error('❌ Failed to parse Brevo response:', data)
+                    reject(parseErr)
+                }
+            })
+        })
+
+        req.on('error', (err) => {
+            console.error('❌ Brevo HTTP request failed:', err.message)
+            reject(err)
+        })
+
+        req.setTimeout(30000, () => {
+            req.destroy(new Error('Brevo API request timed out after 30s'))
+        })
+
+        req.write(payload)
+        req.end()
+    })
 }
 
 /**
