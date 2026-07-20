@@ -69,11 +69,11 @@ const register = async (req, res, next) => {
             subject: welcomeEmail.subject,
             html: welcomeEmail.html,
             text: welcomeEmail.text,
-        }).then((result) => {
-            if (!result?.skipped) {
-                console.log(`✅ Welcome email sent to ${user.email}`)
-            }
-        }).catch(() => {})
+        }).then(() => {
+            console.log(`✅ Welcome email sent to ${user.email}`)
+        }).catch((err) => {
+            console.error(`❌ Failed to send welcome email to ${user.email}:`, err.message)
+        })
 
         res.status(201).json({ token, user: toUserResponse(user) })
     } catch (error) {
@@ -114,11 +114,11 @@ const login = async (req, res, next) => {
             subject: welcomeEmail.subject,
             html: welcomeEmail.html,
             text: welcomeEmail.text,
-        }).then((result) => {
-            if (!result?.skipped) {
-                console.log(`✅ Welcome email sent to ${user.email}`)
-            }
-        }).catch(() => {})
+        }).then(() => {
+            console.log(`✅ Welcome email sent to ${user.email}`)
+        }).catch((err) => {
+            console.error(`❌ Failed to send welcome email to ${user.email}:`, err.message)
+        })
 
         res.json({ token, user: toUserResponse(user) })
     } catch (error) {

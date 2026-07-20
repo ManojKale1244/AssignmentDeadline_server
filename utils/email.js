@@ -88,9 +88,8 @@ const sendEmail = async ({ to, subject, html, text }) => {
         })
         return result
     } catch (err) {
-        // Log cleanly and return skipped — don't throw so callers aren't disrupted
-        console.warn(`⚠️  Email to ${to} failed (${err.code || err.message}). Will retry on next attempt.`)
-        return { skipped: true, reason: err.code || err.message }
+        console.warn(`⚠️  Email to ${to} failed (${err.code || err.message}).`)
+        throw err
     }
 }
 
