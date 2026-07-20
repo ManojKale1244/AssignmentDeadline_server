@@ -10,9 +10,6 @@ const cleanEnv = (key) => {
 
 let _loggedConfig = false
 let _transporter = null       // Cached singleton
-let _smtpVerified = null      // null = not checked, true = works, false = unreachable
-let _lastVerifyAttempt = 0    // Timestamp of last verify attempt
-const VERIFY_RETRY_MS = 10 * 60 * 1000 // Re-check SMTP every 10 minutes if it was down
 
 const getTransporter = () => {
     // Return cached transporter if already created
@@ -59,9 +56,8 @@ const getTransporter = () => {
         connectionTimeout: 10000,   // 10s to establish TCP connection
         greetingTimeout: 10000,     // 10s for SMTP greeting
         socketTimeout: 15000,       // 15s for socket inactivity
-        // Retry connection on transient failures
         tls: {
-            rejectUnauthorized: false,  // Accept self-signed certs (some hosts need this)
+            rejectUnauthorized: false,
         },
     }
 
@@ -69,48 +65,11 @@ const getTransporter = () => {
     return _transporter
 }
 
-/**
- * Verify SMTP connection is reachable.
- * Caches result and retries periodically if it was down.
- */
-const isSmtpReachable = async () => {
-    // If verified and working, skip re-check
-    if (_smtpVerified === true) return true
-
-    // If recently failed, don't spam retry — wait before re-checking
-    const now = Date.now()
-    if (_smtpVerified === false && (now - _lastVerifyAttempt) < VERIFY_RETRY_MS) {
-        return false
-    }
-
-    const transporter = getTransporter()
-    if (!transporter) return false
-
-    _lastVerifyAttempt = now
-    try {
-        await transporter.verify()
-        _smtpVerified = true
-        console.log('✅ SMTP connection verified successfully')
-        return true
-    } catch (err) {
-        _smtpVerified = false
-        console.warn(`⚠️  SMTP unreachable (${err.message}). Emails will be skipped until connection is restored. Will retry in ${VERIFY_RETRY_MS / 60000} min.`)
-        return false
-    }
-}
-
 const sendEmail = async ({ to, subject, html, text }) => {
     const transporter = getTransporter()
     if (!transporter) {
         console.warn('⚠️  SMTP not configured. Skipping email to:', to)
         return { skipped: true }
-    }
-
-    // Check if SMTP is reachable (cached, won't spam retries)
-    const reachable = await isSmtpReachable()
-    if (!reachable) {
-        console.warn(`⚠️  SMTP unreachable. Skipping email to: ${to}`)
-        return { skipped: true, reason: 'smtp_unreachable' }
     }
 
     const from = cleanEnv('SMTP_FROM') || 'EduTrack <no-reply@edutrack.local>'
@@ -129,13 +88,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
         })
         return result
     } catch (err) {
-        // If sending fails with a connection error, mark SMTP as down
-        if (err.code === 'ESOCKET' || err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout')) {
-            _smtpVerified = false
-            _lastVerifyAttempt = Date.now()
-            console.warn(`⚠️  SMTP connection failed (${err.code || err.message}). Marking as unreachable for ${VERIFY_RETRY_MS / 60000} min.`)
-        }
-        throw err
+        // Log cleanly and return skipped — don't throw so callers aren't disrupted
+        console.warn(`⚠️  Email to ${to} failed (${err.code || err.message}). Will retry on next attempt.`)
+        return { skipped: true, reason: err.code || err.message }
     }
 }
 
