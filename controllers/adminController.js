@@ -90,11 +90,11 @@ const createTeacher = async (req, res, next) => {
             subject: welcomeEmail.subject,
             html: welcomeEmail.html,
             text: welcomeEmail.text,
-        }).then(() => {
-            console.log(`✅ Welcome email sent to ${teacher.email}`)
-        }).catch((err) => {
-            console.error(`❌ Failed to send welcome email to ${teacher.email}:`, err.message)
-        })
+        }).then((result) => {
+            if (!result?.skipped) {
+                console.log(`✅ Welcome email sent to ${teacher.email}`)
+            }
+        }).catch(() => {})
 
         res.status(201).json({ teacher })
     } catch (error) {
@@ -141,11 +141,11 @@ const createStudent = async (req, res, next) => {
             subject: welcomeEmail.subject,
             html: welcomeEmail.html,
             text: welcomeEmail.text,
-        }).then(() => {
-            console.log(`✅ Welcome email sent to ${student.email}`)
-        }).catch((err) => {
-            console.error(`❌ Failed to send welcome email to ${student.email}:`, err.message)
-        })
+        }).then((result) => {
+            if (!result?.skipped) {
+                console.log(`✅ Welcome email sent to ${student.email}`)
+            }
+        }).catch(() => {})
 
         res.status(201).json({ student })
     } catch (error) {
