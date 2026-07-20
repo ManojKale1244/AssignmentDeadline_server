@@ -65,16 +65,118 @@ const getTransporter = () => {
     return _transporter
 }
 
-const sendEmail = async ({ to, subject, html, text }) => {
-    const transporter = getTransporter()
-    if (!transporter) {
-        console.warn('⚠️  SMTP not configured. Skipping email to:', to)
-        return { skipped: true }
-    }
+const sendViaBrevo = async (apiKey, { to, subject, html, text, from }) => {
+    const senderEmail = from.match(/<([^>]+)>/)?.[1] || from
+    const senderName = from.split('<')[0]?.trim() || 'EduTrack'
 
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'accept': 'application/json',
+            'api-key': apiKey,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+            sender: { name: senderName, email: senderEmail },
+            to: [{ email: to }],
+            subject: subject,
+            htmlContent: html,
+            textContent: text
+        })
+    })
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Brevo API returned status ${response.status}`)
+    }
+    return response.json()
+}
+
+const sendViaResend = async (apiKey, { to, subject, html, text, from }) => {
+    const sender = from || 'EduTrack <onboarding@resend.dev>'
+
+    const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            from: sender,
+            to: [to],
+            subject: subject,
+            html: html,
+            text: text
+        })
+    })
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `Resend API returned status ${response.status}`)
+    }
+    return response.json()
+}
+
+const sendViaSendGrid = async (apiKey, { to, subject, html, text, from }) => {
+    const senderEmail = from.match(/<([^>]+)>/)?.[1] || from
+    const senderName = from.split('<')[0]?.trim() || 'EduTrack'
+
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            personalizations: [{ to: [{ email: to }] }],
+            from: { name: senderName, email: senderEmail },
+            subject: subject,
+            content: [
+                { type: 'text/plain', value: text },
+                { type: 'text/html', value: html }
+            ]
+        })
+    })
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `SendGrid API returned status ${response.status}`)
+    }
+    return { success: true }
+}
+
+const sendEmail = async ({ to, subject, html, text }) => {
     const from = cleanEnv('SMTP_FROM') || 'EduTrack <no-reply@edutrack.local>'
+    
+    // Check for HTTP API keys first (safe for Render Free Tier)
+    const brevoKey = cleanEnv('BREVO_API_KEY')
+    const resendKey = cleanEnv('RESEND_API_KEY')
+    const sendgridKey = cleanEnv('SENDGRID_API_KEY')
 
     try {
+        if (brevoKey) {
+            console.log(`📧 Sending email via Brevo HTTP API to ${to}...`)
+            return await sendViaBrevo(brevoKey, { to, subject, html, text, from })
+        }
+
+        if (resendKey) {
+            console.log(`📧 Sending email via Resend HTTP API to ${to}...`)
+            return await sendViaResend(resendKey, { to, subject, html, text, from })
+        }
+
+        if (sendgridKey) {
+            console.log(`📧 Sending email via SendGrid HTTP API to ${to}...`)
+            return await sendViaSendGrid(sendgridKey, { to, subject, html, text, from })
+        }
+
+        // Fall back to standard SMTP if no API keys are configured
+        const transporter = getTransporter()
+        if (!transporter) {
+            console.warn('⚠️  SMTP/API not configured. Skipping email to:', to)
+            return { skipped: true }
+        }
+
+        console.log(`📧 Sending email via SMTP to ${to}...`)
         const result = await transporter.sendMail({
             from,
             replyTo: from,
