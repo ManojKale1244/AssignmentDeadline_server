@@ -101,25 +101,6 @@ const login = async (req, res, next) => {
 
         const token = generateToken(user)
 
-        // Send welcome email asynchronously (non-blocking)
-        const portalUrl = process.env.CLIENT_URL?.split(',')[0] || 'http://localhost:5173'
-        const welcomeEmail = buildWelcomeEmail({
-            userName: user.name,
-            userEmail: user.email,
-            role: user.role,
-            portalUrl,
-        })
-        sendEmail({
-            to: user.email,
-            subject: welcomeEmail.subject,
-            html: welcomeEmail.html,
-            text: welcomeEmail.text,
-        }).then(() => {
-            console.log(`✅ Welcome email sent to ${user.email}`)
-        }).catch((err) => {
-            console.error(`❌ Failed to send welcome email to ${user.email}:`, err.message)
-        })
-
         res.json({ token, user: toUserResponse(user) })
     } catch (error) {
         next(error)
