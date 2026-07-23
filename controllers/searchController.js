@@ -55,7 +55,7 @@ const searchAll = async (req, res, next) => {
                         {
                             $or: [
                                 { title: searchRegex },
-                                { body: searchRegex }
+                                { description: searchRegex }
                             ]
                         }
                     ]
@@ -110,7 +110,7 @@ const searchAll = async (req, res, next) => {
                     .lean(),
                 Notice.find({
                     createdBy: req.user.id,
-                    $or: [{ title: searchRegex }, { body: searchRegex }]
+                    $or: [{ title: searchRegex }, { description: searchRegex }]
                 })
                     .limit(10)
                     .lean()
@@ -152,7 +152,7 @@ const searchAll = async (req, res, next) => {
                     .limit(10)
                     .lean(),
                 Notice.find({
-                    $or: [{ title: searchRegex }, { body: searchRegex }]
+                    $or: [{ title: searchRegex }, { description: searchRegex }]
                 })
                     .limit(10)
                     .lean()

@@ -3,7 +3,7 @@ const Material = require('../models/Material')
 const Notice = require('../models/Notice')
 const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
-const { proxyCloudinaryFile, buildFilename } = require('../utils/fileProxy')
+const { proxyFile, buildFilename } = require('../utils/fileProxy')
 
 const checkStudent = (req, res, next) => {
     if (req.user.role !== 'student') {
@@ -281,9 +281,8 @@ const getAssignmentAttachment = async (req, res, next) => {
             return res.status(404).json({ message: 'No attachment found' })
         }
 
-        await proxyCloudinaryFile({
+        await proxyFile({
             fileUrl: assignment.attachment.url,
-            publicId: assignment.attachment.publicId,
             filename: buildFilename(assignment.title, assignment.attachment.fileType),
             action: req.query.action || 'download',
         }, res)

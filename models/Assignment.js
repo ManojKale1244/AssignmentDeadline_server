@@ -36,7 +36,7 @@ const AssignmentSchema = new mongoose.Schema(
             enum: ['A', 'B', 'C'],
             required: true,
         },
-        deadline: { type: Date, required: true },
+        deadline: { type: Date, required: false, default: null },
         attachment: { type: AttachmentSchema, default: () => ({}) },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         remindersSet: { type: [ReminderSetSchema], default: [] },

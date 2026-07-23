@@ -46,16 +46,25 @@ if (process.env.NODE_ENV !== 'production') {
 
 app.use(
     rateLimit({
-        windowMs: 15 * 60 * 1000,
-        max: 300,
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 100000, // High capacity to support 1000+ simultaneous students on campus Wi-Fi
+        keyGenerator: (req) => {
+            // Rate-limit per user token when authenticated so 1000 students sharing campus Wi-Fi IP don't block each other
+            const authHeader = req.headers.authorization
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                return authHeader.slice(7)
+            }
+            return req.ip
+        },
         standardHeaders: true,
         legacyHeaders: false,
+        message: { message: 'Too many requests, please try again later.' },
     })
 )
 app.get("/", (req, res) => {
-  res.status(200).json({
-    message: "EduTrack API Running Successfully"
-  });
+    res.status(200).json({
+        message: "EduTrack API Running Successfully"
+    });
 });
 
 app.get('/api/health', (req, res) => {

@@ -156,7 +156,7 @@ const buildReminderEmail = ({ studentName, assignmentTitle, subjectName, deadlin
         <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 30px 0;">
         <p style="font-size: 12px; color: #777777; text-align: center;">
             You're receiving this because you are enrolled in ${subjectName}.<br>
-            © 2026 EduTrack Manoj Kale - all right resrved
+            © 2026 EduTrack Manoj Kale - All rights reserved
         </p>
     </div>
 </body>

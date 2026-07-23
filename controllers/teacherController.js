@@ -4,7 +4,7 @@ const Notice = require('../models/Notice')
 const Essay = require('../models/Essay')
 const Subject = require('../models/Subject')
 const User = require('../models/User')
-const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
+const { uploadBuffer, deleteAsset } = require('../utils/r2')
 const { logActivity } = require('../utils/activityLog')
 const { notifyStudents } = require('../utils/notifyStudents')
 const { queueRemindersForAssignment, deleteRemindersForAssignment, requeueRemindersForAssignment } = require('../utils/reminders')
@@ -88,8 +88,8 @@ const createAssignment = async (req, res, next) => {
     try {
         const { title, description, subjectId, deadline, remindersSet, class: targetClass, division: targetDivision } = req.body
 
-        if (!title || !subjectId || !deadline) {
-            return res.status(400).json({ message: 'Title, subject, and deadline are required' })
+        if (!title || !subjectId) {
+            return res.status(400).json({ message: 'Title and subject are required' })
         }
 
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
@@ -99,11 +99,12 @@ const createAssignment = async (req, res, next) => {
         if (req.file) {
             const uploadResult = await uploadBuffer(req.file.buffer, {
                 folder: 'edutrack/assignments',
-                resource_type: 'auto',
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
             })
             attachment = {
-                url: uploadResult.secure_url,
-                publicId: uploadResult.public_id,
+                url: uploadResult.url,
+                publicId: uploadResult.key,
                 fileType: uploadResult.format || req.file.mimetype || '',
             }
         }
@@ -117,8 +118,18 @@ const createAssignment = async (req, res, next) => {
             }
         }
 
-        const allDivisions = (targetClass || subject.class) === 'SY' ? ['A', 'B', 'C'] : ['A', 'B']
-        const divisionsToCreate = targetDivision === 'both' ? allDivisions : [targetDivision || subject.division]
+        let divisionsToCreate = [targetDivision || subject.division]
+        if (targetDivision === 'both' || targetDivision === 'all') {
+            const teacherSubjects = await Subject.find({
+                code: subject.code,
+                class: targetClass || subject.class,
+                teacherId: req.user.id
+            }).select('division')
+
+            divisionsToCreate = teacherSubjects.length > 0
+                ? [...new Set(teacherSubjects.map(s => s.division))]
+                : [subject.division]
+        }
         const createdAssignments = []
 
         for (const div of divisionsToCreate) {
@@ -135,7 +146,7 @@ const createAssignment = async (req, res, next) => {
                 subjectId: targetSubject ? targetSubject._id : subjectId,
                 class: targetClass || subject.class,
                 division: div,
-                deadline,
+                deadline: deadline ? new Date(deadline) : null,
                 attachment,
                 createdBy: req.user.id,
                 remindersSet: parsedReminders,
@@ -144,10 +155,10 @@ const createAssignment = async (req, res, next) => {
             createdAssignments.push(assignment)
         }
 
-        // Notify students in the target class+division(s)
+        const deadlineMsg = deadline ? `. Deadline: ${new Date(deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''
         await notifyStudents({
             title: 'New Assignment Posted',
-            message: `"${title}" has been assigned. Deadline: ${new Date(deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+            message: `"${title}" has been assigned${deadlineMsg}.`,
             type: 'assignment',
             relatedId: createdAssignments[0]._id,
             relatedModel: 'Assignment',
@@ -178,7 +189,7 @@ const updateAssignment = async (req, res, next) => {
 
         if (title !== undefined) assignment.title = title
         if (description !== undefined) assignment.description = description
-        if (deadline !== undefined) assignment.deadline = deadline
+        if (deadline !== undefined) assignment.deadline = deadline ? new Date(deadline) : null
 
         let parsedReminders = undefined
         if (remindersSet !== undefined) {
@@ -197,11 +208,12 @@ const updateAssignment = async (req, res, next) => {
             }
             const uploadResult = await uploadBuffer(req.file.buffer, {
                 folder: 'edutrack/assignments',
-                resource_type: 'auto',
+                originalname: req.file.originalname,
+                mimetype: req.file.mimetype,
             })
             assignment.attachment = {
-                url: uploadResult.secure_url,
-                publicId: uploadResult.public_id,
+                url: uploadResult.url,
+                publicId: uploadResult.key,
                 fileType: uploadResult.format || req.file.mimetype || '',
             }
         } else if (bodyAttachment !== undefined) {
@@ -219,7 +231,7 @@ const updateAssignment = async (req, res, next) => {
         if (deadline !== undefined) {
             await requeueRemindersForAssignment(assignment)
         }
-        
+
         const updatedAssignment = await Assignment.findById(assignment._id).populate('subjectId', 'name code class division')
         res.json({ assignment: updatedAssignment })
     } catch (error) {
@@ -290,14 +302,25 @@ const uploadMaterial = async (req, res, next) => {
         const subject = await verifySubjectOwnership(subjectId, req.user.id, res)
         if (!subject) return
 
-        // Upload file to Cloudinary
+        // Upload file to Cloudflare R2
         const uploadResult = await uploadBuffer(req.file.buffer, {
             folder: 'edutrack/materials',
-            resource_type: 'auto',
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
         })
 
-        const allDivisions = (targetClass || subject.class) === 'SY' ? ['A', 'B', 'C'] : ['A', 'B']
-        const divisionsToCreate = targetDivision === 'both' ? allDivisions : [targetDivision || subject.division]
+        let divisionsToCreate = [targetDivision || subject.division]
+        if (targetDivision === 'both' || targetDivision === 'all') {
+            const teacherSubjects = await Subject.find({
+                code: subject.code,
+                class: targetClass || subject.class,
+                teacherId: req.user.id
+            }).select('division')
+
+            divisionsToCreate = teacherSubjects.length > 0
+                ? [...new Set(teacherSubjects.map(s => s.division))]
+                : [subject.division]
+        }
         const createdMaterials = []
 
         for (const div of divisionsToCreate) {
@@ -312,8 +335,8 @@ const uploadMaterial = async (req, res, next) => {
                 title,
                 category,
                 subjectId: targetSubject ? targetSubject._id : subjectId,
-                fileUrl: uploadResult.secure_url,
-                publicId: uploadResult.public_id,
+                fileUrl: uploadResult.url,
+                publicId: uploadResult.key,
                 fileType: uploadResult.format || req.file.mimetype || '',
                 uploadedBy: req.user.id,
                 class: targetClass || subject.class,

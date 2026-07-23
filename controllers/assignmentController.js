@@ -1,12 +1,12 @@
 const Assignment = require('../models/Assignment')
 const User = require('../models/User')
-const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
+const { uploadBuffer, deleteAsset } = require('../utils/r2')
 const { queueAssignmentReminders, REMINDER_TYPES } = require('../utils/reminders')
 const { logActivity } = require('../utils/activityLog')
 
 const mapAttachment = (file, result) => ({
-    url: result.secure_url,
-    publicId: result.public_id,
+    url: result.url,
+    publicId: result.key,
     fileType: result.format || file.mimetype || '',
 })
 
@@ -15,9 +15,9 @@ const createAssignment = async (req, res, next) => {
         const { title, description, subjectId, class: assignmentClass, division, deadline } =
             req.body
 
-        if (!title || !subjectId || !assignmentClass || !division || !deadline) {
+        if (!title || !subjectId || !assignmentClass || !division) {
             return res.status(400).json({
-                message: 'Title, subject, class, division, and deadline required',
+                message: 'Title, subject, class, and division required',
             })
         }
 
@@ -26,7 +26,8 @@ const createAssignment = async (req, res, next) => {
         if (upload) {
             const result = await uploadBuffer(upload.buffer, {
                 folder: 'edutrack/assignments',
-                resource_type: 'auto',
+                originalname: upload.originalname,
+                mimetype: upload.mimetype,
             })
             attachment = mapAttachment(upload, result)
         }
@@ -37,7 +38,7 @@ const createAssignment = async (req, res, next) => {
             subjectId,
             class: assignmentClass,
             division,
-            deadline: new Date(deadline),
+            deadline: deadline ? new Date(deadline) : null,
             attachment,
             createdBy: req.user.id,
             remindersSet: REMINDER_TYPES.map((type) => ({ type, sent: false })),
@@ -109,7 +110,7 @@ const updateAssignment = async (req, res, next) => {
         if (subjectId !== undefined) assignment.subjectId = subjectId
         if (assignmentClass !== undefined) assignment.class = assignmentClass
         if (division !== undefined) assignment.division = division
-        if (deadline !== undefined) assignment.deadline = new Date(deadline)
+        if (deadline !== undefined) assignment.deadline = deadline ? new Date(deadline) : null
 
         const upload = req.file || req.files?.[0]
         if (upload) {
@@ -118,7 +119,8 @@ const updateAssignment = async (req, res, next) => {
             }
             const result = await uploadBuffer(upload.buffer, {
                 folder: 'edutrack/assignments',
-                resource_type: 'auto',
+                originalname: upload.originalname,
+                mimetype: upload.mimetype,
             })
             assignment.attachment = mapAttachment(upload, result)
         }

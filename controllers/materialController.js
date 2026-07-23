@@ -1,8 +1,8 @@
 const Material = require('../models/Material')
 const User = require('../models/User')
-const { uploadBuffer, deleteAsset } = require('../utils/cloudinary')
+const { uploadBuffer, deleteAsset } = require('../utils/r2')
 const { logActivity } = require('../utils/activityLog')
-const { proxyCloudinaryFile, buildFilename } = require('../utils/fileProxy')
+const { proxyFile, buildFilename } = require('../utils/fileProxy')
 
 const createMaterial = async (req, res, next) => {
     try {
@@ -20,15 +20,16 @@ const createMaterial = async (req, res, next) => {
 
         const uploadResult = await uploadBuffer(req.file.buffer, {
             folder: 'edutrack/materials',
-            resource_type: 'auto',
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
         })
 
         const material = await Material.create({
             title,
             category,
             subjectId,
-            fileUrl: uploadResult.secure_url,
-            publicId: uploadResult.public_id,
+            fileUrl: uploadResult.url,
+            publicId: uploadResult.key,
             fileType: uploadResult.format || req.file.mimetype || '',
             uploadedBy: req.user.id,
             class: materialClass,
@@ -125,9 +126,8 @@ const downloadMaterialAttachment = async (req, res, next) => {
             return res.status(404).json({ message: 'No file found' })
         }
 
-        await proxyCloudinaryFile({
+        await proxyFile({
             fileUrl: material.fileUrl,
-            publicId: material.publicId,
             filename: buildFilename(material.title, material.fileType),
             action: req.query.action || 'download',
         }, res)
