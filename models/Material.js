@@ -11,6 +11,7 @@ const MaterialSchema = new mongoose.Schema(
                 'question_bank',
                 'ppt',
                 'previous_papers',
+                'codes',
                 // Web Development extra categories
                 'html_notes',
                 'css_notes',
