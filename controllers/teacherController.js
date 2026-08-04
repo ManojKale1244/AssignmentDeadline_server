@@ -47,12 +47,37 @@ const getTeacherDashboard = async (req, res, next) => {
         const subjects = await Subject.find({ teacherId: req.user.id })
         const classDivs = subjects.map((s) => ({ class: s.class, division: s.division }))
 
+        // Unique class-division targets
+        const seen = new Set()
+        const uniqueClassDivs = classDivs.filter((cd) => {
+            const key = `${cd.class}-${cd.division}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+        })
+
         let totalStudents = 0
-        if (classDivs.length > 0) {
+        let divisionCounts = []
+        if (uniqueClassDivs.length > 0) {
             totalStudents = await User.countDocuments({
                 role: 'student',
-                $or: classDivs,
+                $or: uniqueClassDivs,
             })
+
+            divisionCounts = await Promise.all(
+                uniqueClassDivs.map(async (cd) => {
+                    const count = await User.countDocuments({
+                        role: 'student',
+                        class: cd.class,
+                        division: cd.division,
+                    })
+                    return {
+                        class: cd.class,
+                        division: cd.division,
+                        count,
+                    }
+                })
+            )
         }
 
         const [todayDeadlines, upcomingDeadlines, totalAssignments, totalMaterials, totalNotices] =
@@ -75,6 +100,7 @@ const getTeacherDashboard = async (req, res, next) => {
                 totalNotices,
                 mySubjects,
                 totalStudents,
+                divisionCounts,
             },
         })
     } catch (error) {
@@ -587,6 +613,36 @@ const deleteEssay = async (req, res, next) => {
     }
 }
 
+// ─── STUDENTS (read-only) ─────────────────────────────────────────────────────
+
+const getTeacherStudents = async (req, res, next) => {
+    try {
+        const subjects = await Subject.find({ teacherId: req.user.id })
+        const classDivs = subjects.map((s) => ({ class: s.class, division: s.division }))
+
+        // Deduplicate class-division pairs
+        const seen = new Set()
+        const uniqueClassDivs = classDivs.filter((cd) => {
+            const key = `${cd.class}-${cd.division}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+        })
+
+        let students = []
+        if (uniqueClassDivs.length > 0) {
+            students = await User.find({
+                role: 'student',
+                $or: uniqueClassDivs,
+            }).select('-password').sort({ class: 1, division: 1, name: 1 })
+        }
+
+        res.json({ students, classDivisions: uniqueClassDivs })
+    } catch (error) {
+        next(error)
+    }
+}
+
 module.exports = {
     checkTeacher,
     getTeacherDashboard,
@@ -605,4 +661,5 @@ module.exports = {
     getTeacherEssays,
     updateEssay,
     deleteEssay,
+    getTeacherStudents,
 }

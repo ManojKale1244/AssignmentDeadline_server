@@ -19,6 +19,7 @@ const {
     getTeacherEssays,
     updateEssay,
     deleteEssay,
+    getTeacherStudents,
 } = require('../controllers/teacherController')
 
 const ALLOWED_MIMETYPES = [
@@ -69,6 +70,9 @@ router.use(auth)
 router.use(checkTeacher)
 
 router.get('/dashboard', getTeacherDashboard)
+
+// Students (read-only)
+router.get('/students', getTeacherStudents)
 
 // Assignments
 router.get('/assignments', getTeacherAssignments)
