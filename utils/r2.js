@@ -1,4 +1,5 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3')
+const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3')
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
 const path = require('path')
 const crypto = require('crypto')
 
@@ -91,4 +92,29 @@ const deleteAsset = async (key) => {
     )
 }
 
-module.exports = { uploadBuffer, deleteAsset }
+/**
+ * Generate a presigned R2 URL for downloading or viewing a file.
+ * The presigned URL includes Content-Disposition so the browser
+ * downloads the file with the correct filename.
+ *
+ * @param {string} key      - The R2 object key (stored as publicId)
+ * @param {string} filename - The desired download filename
+ * @param {string} action   - 'download' or 'view'
+ * @returns {Promise<string>} Presigned URL valid for 1 hour
+ */
+const getPresignedDownloadUrl = async (key, filename, action = 'download') => {
+    const disposition = action === 'download'
+        ? `attachment; filename="${filename}"`
+        : `inline; filename="${filename}"`
+
+    const command = new GetObjectCommand({
+        Bucket: BUCKET,
+        Key: key,
+        ResponseContentDisposition: disposition,
+    })
+
+    return getSignedUrl(s3, command, { expiresIn: 3600 })
+}
+
+module.exports = { uploadBuffer, deleteAsset, getPresignedDownloadUrl }
+

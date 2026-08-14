@@ -128,6 +128,7 @@ const downloadMaterialAttachment = async (req, res, next) => {
 
         await proxyFile({
             fileUrl: material.fileUrl,
+            publicId: material.publicId,
             filename: buildFilename(material.title, material.fileType),
             action: req.query.action || 'download',
         }, res)

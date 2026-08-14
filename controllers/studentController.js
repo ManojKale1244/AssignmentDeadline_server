@@ -283,6 +283,7 @@ const getAssignmentAttachment = async (req, res, next) => {
 
         await proxyFile({
             fileUrl: assignment.attachment.url,
+            publicId: assignment.attachment.publicId,
             filename: buildFilename(assignment.title, assignment.attachment.fileType),
             action: req.query.action || 'download',
         }, res)

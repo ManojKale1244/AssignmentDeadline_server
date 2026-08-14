@@ -249,6 +249,7 @@ const getStats = async (req, res, next) => {
             totalAssignments,
             totalMaterials,
             totalNotices,
+            divisionCountsRaw,
         ] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({ role: 'teacher' }),
@@ -258,7 +259,49 @@ const getStats = async (req, res, next) => {
             Assignment.countDocuments(),
             Material.countDocuments(),
             Notice.countDocuments(),
+            User.aggregate([
+                { $match: { role: 'student', class: { $exists: true, $ne: '' }, division: { $exists: true, $ne: '' } } },
+                { $group: { _id: { class: '$class', division: '$division' }, count: { $sum: 1 } } },
+                { $sort: { '_id.class': 1, '_id.division': 1 } }
+            ]),
         ])
+
+        const ALL_CLASS_DIVS = [
+            { class: 'SY', division: 'A' },
+            { class: 'SY', division: 'B' },
+            { class: 'SY', division: 'C' },
+            { class: 'TY', division: 'A' },
+            { class: 'TY', division: 'B' },
+            { class: 'LY', division: 'A' },
+            { class: 'LY', division: 'B' },
+        ]
+
+        const dbCountsMap = {}
+        divisionCountsRaw.forEach((r) => {
+            const key = `${r._id.class}-${r._id.division}`
+            dbCountsMap[key] = r.count
+        })
+
+        const divisionCounts = ALL_CLASS_DIVS.map((cd) => {
+            const key = `${cd.class}-${cd.division}`
+            return {
+                class: cd.class,
+                division: cd.division,
+                count: dbCountsMap[key] || 0,
+            }
+        })
+
+        // Append any non-standard class-division pairs if present in DB
+        divisionCountsRaw.forEach((r) => {
+            const key = `${r._id.class}-${r._id.division}`
+            if (!ALL_CLASS_DIVS.some((cd) => `${cd.class}-${cd.division}` === key)) {
+                divisionCounts.push({
+                    class: r._id.class,
+                    division: r._id.division,
+                    count: r.count,
+                })
+            }
+        })
 
         res.json({
             stats: {
@@ -270,6 +313,7 @@ const getStats = async (req, res, next) => {
                 totalAssignments,
                 totalMaterials,
                 totalNotices,
+                divisionCounts,
             },
         })
     } catch (error) {

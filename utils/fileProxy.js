@@ -1,64 +1,46 @@
-const https = require('https')
-const http = require('http')
+const { getPresignedDownloadUrl } = require('./r2')
 
 /**
- * Follow redirects for http/https.get (Node built-in doesn't follow them).
- * Shared utility — used by both studentController and materialController.
+ * Extract the R2 object key from a public R2 URL.
+ * e.g. "https://pub-xxx.r2.dev/edutrack/materials/abc.pdf" → "edutrack/materials/abc.pdf"
  */
-const followRedirects = (url, maxRedirects = 5) => {
-    return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? https : http
-
-        protocol.get(url, (response) => {
-            if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
-                if (maxRedirects <= 0) return reject(new Error('Too many redirects'))
-                const redirectUrl = response.headers.location.startsWith('http')
-                    ? response.headers.location
-                    : new URL(response.headers.location, url).href
-                return resolve(followRedirects(redirectUrl, maxRedirects - 1))
-            }
-            resolve(response)
-        }).on('error', reject)
-    })
+const extractKeyFromUrl = (fileUrl) => {
+    try {
+        const url = new URL(fileUrl)
+        // Remove leading slash from pathname
+        return url.pathname.replace(/^\/+/, '')
+    } catch {
+        return null
+    }
 }
 
 /**
- * Proxy a file (from R2 or any public URL) through the server.
- * Handles redirect-following and streams the file to the client.
+ * Redirect client to a presigned R2 URL for download/view.
+ * The server only sends a tiny 302 redirect — zero file bandwidth on Render.
  *
  * @param {Object} options
- * @param {string} options.fileUrl   - The stored file URL (R2 public URL or legacy Cloudinary URL)
+ * @param {string} options.fileUrl   - The stored file URL (R2 public URL)
+ * @param {string} options.publicId  - The R2 object key (preferred over extracting from URL)
  * @param {string} options.filename  - Sanitized filename for Content-Disposition
  * @param {string} options.action    - 'download' | 'view'
  * @param {Object} res              - Express response object
  */
-const proxyFile = async ({ fileUrl, filename, action = 'download' }, res) => {
-    const setHeaders = (fileRes) => {
-        const contentType = fileRes.headers['content-type'] || 'application/octet-stream'
-        res.setHeader('Content-Type', contentType)
-        res.setHeader(
-            'Content-Disposition',
-            action === 'download'
-                ? `attachment; filename="${filename}"`
-                : `inline; filename="${filename}"`
-        )
-        if (fileRes.headers['content-length']) {
-            res.setHeader('Content-Length', fileRes.headers['content-length'])
-        }
-    }
-
+const proxyFile = async ({ fileUrl, publicId, filename, action = 'download' }, res) => {
     try {
-        const fileRes = await followRedirects(fileUrl)
-
-        if (fileRes.statusCode === 200) {
-            setHeaders(fileRes)
-            return fileRes.pipe(res)
+        // Get the R2 object key — prefer publicId, fall back to extracting from URL
+        const key = publicId || extractKeyFromUrl(fileUrl)
+        if (!key) {
+            return res.status(404).json({ message: 'File key not found' })
         }
 
-        return res.status(502).json({ message: 'Failed to fetch file from storage' })
-    } catch (fetchErr) {
-        console.error('File proxy fetch error:', fetchErr.message)
-        return res.status(502).json({ message: 'Failed to fetch file' })
+        // Generate presigned URL with Content-Disposition header
+        const presignedUrl = await getPresignedDownloadUrl(key, filename, action)
+
+        // 302 redirect → browser fetches file directly from R2
+        return res.redirect(presignedUrl)
+    } catch (err) {
+        console.error('File redirect error:', err.message)
+        return res.status(502).json({ message: 'Failed to generate download link' })
     }
 }
 
@@ -71,4 +53,4 @@ const buildFilename = (title, fileType) => {
     return safeName + ext
 }
 
-module.exports = { followRedirects, proxyFile, buildFilename }
+module.exports = { proxyFile, buildFilename }
