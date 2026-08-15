@@ -4,7 +4,7 @@ const errorHandler = (err, req, res, next) => {
     // Handle multer-specific errors (file size, file filter)
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ message: 'File too large. Maximum size is 20 MB.' })
+            return res.status(400).json({ message: 'File too large. Maximum size limit exceeded.' })
         }
         return res.status(400).json({ message: err.message })
     }

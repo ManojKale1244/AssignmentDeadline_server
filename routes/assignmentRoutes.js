@@ -22,7 +22,7 @@ const ALLOWED_MIMETYPES = [
 const router = express.Router()
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
+    limits: { fileSize: 30 * 1024 * 1024 }, // 30 MB max
     fileFilter: (req, file, cb) => {
         if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
             return cb(new Error('Only PDF, PPT, DOC, PNG, and JPG files are allowed'), false)
