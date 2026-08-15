@@ -324,7 +324,7 @@ const getStats = async (req, res, next) => {
 const updateUser = async (req, res, next) => {
     try {
         const { id } = req.params
-        const { name, email, role, class: userClass, division, department, isActive } = req.body
+        const { name, email, role, class: userClass, division, department, isActive, password } = req.body
 
         const user = await User.findById(id)
         if (!user) {
@@ -338,6 +338,10 @@ const updateUser = async (req, res, next) => {
         if (division !== undefined) user.division = division
         if (department !== undefined) user.department = department
         if (isActive !== undefined) user.isActive = isActive
+
+        if (password && password.trim().length > 0) {
+            user.password = await bcrypt.hash(password.trim(), 10)
+        }
 
         await user.save()
         await logActivity(req.user.id, 'update_user', 'User', user._id)
