@@ -1,3 +1,4 @@
+const path = require('path')
 const { getPresignedDownloadUrl } = require('./r2')
 
 /**
@@ -15,31 +16,55 @@ const extractKeyFromUrl = (fileUrl) => {
 }
 
 /**
- * Redirect client to a presigned R2 URL for download/view.
- * The server only sends a tiny 302 redirect — zero file bandwidth on Render.
+ * Redirect client to presigned URL (or Cloudinary URL) for download/view.
+ * Supports both legacy Cloudinary assets and new Cloudflare R2 assets.
  *
  * @param {Object} options
- * @param {string} options.fileUrl   - The stored file URL (R2 public URL)
- * @param {string} options.publicId  - The R2 object key (preferred over extracting from URL)
+ * @param {string} options.fileUrl   - Stored file URL
+ * @param {string} options.publicId  - Public ID or R2 object key
  * @param {string} options.filename  - Sanitized filename for Content-Disposition
  * @param {string} options.action    - 'download' | 'view'
  * @param {Object} res              - Express response object
  */
 const proxyFile = async ({ fileUrl, publicId, filename, action = 'download' }, res) => {
     try {
-        // Get the R2 object key — prefer publicId, fall back to extracting from URL
+        const isCloudinaryUrl = fileUrl && (fileUrl.includes('cloudinary.com') || fileUrl.includes('res.cloudinary.com'))
         const key = publicId || extractKeyFromUrl(fileUrl)
+        const isLegacyCloudinaryKey = key && !path.extname(key) && !fileUrl?.includes('r2.')
+
+        // Handle Cloudinary files (by URL or legacy publicId)
+        if (isCloudinaryUrl || isLegacyCloudinaryKey) {
+            let redirectUrl = fileUrl
+
+            if (!redirectUrl && isLegacyCloudinaryKey) {
+                const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'demo'
+                redirectUrl = `https://res.cloudinary.com/${cloudName}/image/upload/${key}`
+            }
+
+            if (redirectUrl && action === 'download' && !redirectUrl.includes('fl_attachment')) {
+                redirectUrl = redirectUrl.includes('/upload/')
+                    ? redirectUrl.replace('/upload/', '/upload/fl_attachment/')
+                    : redirectUrl
+            }
+
+            if (redirectUrl) {
+                return res.redirect(redirectUrl)
+            }
+        }
+
         if (!key) {
+            if (fileUrl) return res.redirect(fileUrl)
             return res.status(404).json({ message: 'File key not found' })
         }
 
-        // Generate presigned URL with Content-Disposition header
+        // Generate presigned URL with Content-Disposition header for Cloudflare R2
         const presignedUrl = await getPresignedDownloadUrl(key, filename, action)
 
         // 302 redirect → browser fetches file directly from R2
         return res.redirect(presignedUrl)
     } catch (err) {
         console.error('File redirect error:', err.message)
+        if (fileUrl) return res.redirect(fileUrl)
         return res.status(502).json({ message: 'Failed to generate download link' })
     }
 }
