@@ -44,11 +44,11 @@ const proxyFile = async ({ fileUrl, publicId, filename, action = 'download' }, r
     }
 }
 
-/**
- * Build a safe download filename from a title and file type.
- */
 const buildFilename = (title, fileType) => {
-    const ext = fileType ? '.' + fileType.replace(/^\./, '') : ''
+    let ext = ''
+    if (fileType && !fileType.includes('/')) {
+        ext = '.' + fileType.replace(/^\./, '')
+    }
     const safeName = (title || 'file').replace(/[^a-zA-Z0-9_\- ]/g, '').trim()
     return safeName + ext
 }
