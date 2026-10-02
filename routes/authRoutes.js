@@ -1,6 +1,14 @@
 const express = require('express')
 const multer = require('multer')
-const { register, login, me, updateProfile, uploadProfilePhoto } = require('../controllers/authController')
+const {
+    register,
+    sendRegistrationOtp,
+    verifyRegistrationOtp,
+    login,
+    me,
+    updateProfile,
+    uploadProfilePhoto,
+} = require('../controllers/authController')
 const auth = require('../middleware/auth')
 
 const router = express.Router()
@@ -17,6 +25,11 @@ const avatarUpload = multer({
     },
 })
 
+// OTP Registration flow
+router.post('/register/send-otp', sendRegistrationOtp)
+router.post('/register/verify-otp', verifyRegistrationOtp)
+
+// Standard auth routes
 router.post('/register', register)
 router.post('/login', login)
 router.get('/me', auth, me)
@@ -24,3 +37,4 @@ router.put('/profile', auth, updateProfile)
 router.post('/profile/avatar', auth, avatarUpload.single('photo'), uploadProfilePhoto)
 
 module.exports = router
+

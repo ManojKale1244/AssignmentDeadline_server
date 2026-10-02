@@ -350,4 +350,102 @@ const buildWelcomeEmail = ({ userName, userEmail, role, portalUrl }) => {
     return { subject, html, text }
 }
 
-module.exports = { sendEmail, buildReminderEmail, buildWelcomeEmail }
+const buildOtpEmail = ({ userName, otp, expiresMinutes = 10 }) => {
+    // Format OTP with spaces between digits (e.g. "1 9 9 2 8 1")
+    const formattedOtp = String(otp).split('').join(' ')
+    const subject = `Your EduTrack Verification Code: ${otp}`
+    const text = `Hi ${userName},\n\nUse the verification code below to complete your account registration. This code is valid for ${expiresMinutes} minutes.\n\nVerification Code: ${formattedOtp}\n\nIf you didn't request this code, you can safely ignore this email.\n\nThis is an automated message from EduTrack.\n© 2026 EduTrack Manoj Kale - all rights reserved`
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email</title>
+</head>
+<body style="margin:0; padding:0; background-color:#F1F5F9; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing:antialiased;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F1F5F9; padding:40px 16px;">
+        <tr>
+            <td align="center">
+                <!-- Main Card Container -->
+                <table width="500" cellpadding="0" cellspacing="0" style="max-width:500px; width:100%; background-color:#FFFFFF; border-radius:18px; overflow:hidden; box-shadow:0 12px 36px rgba(99, 102, 241, 0.14), 0 2px 6px rgba(0,0,0,0.04); border:1px solid #E2E8F0;">
+                    
+                    <!-- Header with Purple/Indigo Gradient -->
+                    <tr>
+                        <td style="background:#6366F1; background-image:linear-gradient(135deg, #6366F1 0%, #7C3AED 55%, #8B5CF6 100%); padding:42px 32px 36px; text-align:center;">
+                            <!-- App Badge -->
+                            <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px auto;">
+                                <tr>
+                                    <td align="center" style="background-color:rgba(255, 255, 255, 0.22); border:1px solid rgba(255, 255, 255, 0.35); color:#FFFFFF; font-weight:800; font-size:16px; width:48px; height:48px; border-radius:12px; text-align:center; vertical-align:middle;">
+                                        ET
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Title -->
+                            <h1 style="margin:0 0 8px; color:#FFFFFF; font-size:26px; font-weight:800; letter-spacing:-0.4px;">
+                                Verify Your Email
+                            </h1>
+                            <p style="margin:0; color:rgba(255, 255, 255, 0.9); font-size:14px; font-weight:400;">
+                                Complete your EduTrack registration
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Card Body -->
+                    <tr>
+                        <td style="padding:36px 36px 30px; background-color:#FFFFFF;">
+                            <!-- Greeting -->
+                            <p style="margin:0 0 16px; color:#1E293B; font-size:16px; line-height:1.5;">
+                                Hi <strong style="color:#0F172A; font-weight:700;">${userName}</strong>,
+                            </p>
+
+                            <!-- Instruction -->
+                            <p style="margin:0 0 28px; color:#475569; font-size:14.5px; line-height:1.6;">
+                                Use the verification code below to complete your account registration. This code is valid for <strong style="color:#0F172A; font-weight:700;">${expiresMinutes} minutes</strong>.
+                            </p>
+
+                            <!-- OTP Box with Dashed Border -->
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px 0;">
+                                <tr>
+                                    <td align="center" style="background-color:#F5F3FF; border:2px dashed #818CF8; border-radius:16px; padding:24px 16px;">
+                                        <div style="font-family:'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; font-size:36px; font-weight:800; letter-spacing:14px; color:#5B50EA; text-align:center; padding-left:14px;">
+                                            ${otp}
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Subtext -->
+                            <p style="margin:0; color:#64748B; font-size:13px; line-height:1.5; text-align:center;">
+                                If you didn't request this code, you can safely ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color:#FAFAFA; border-top:1px solid #F1F5F9; padding:22px 30px; text-align:center;">
+                            <p style="margin:0 0 4px; color:#64748B; font-size:12px; line-height:1.5;">
+                                This is an automated message from EduTrack.
+                            </p>
+                            <p style="margin:0; color:#475569; font-size:12px; line-height:1.5; font-weight:600;">
+                                © 2026 EduTrack Manoj Kale - all rights reserved
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`
+
+    return { subject, html, text }
+}
+
+module.exports = { sendEmail, buildReminderEmail, buildWelcomeEmail, buildOtpEmail }
+
+
